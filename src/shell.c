@@ -1113,14 +1113,13 @@ static int parse_command(
         {
             if (in_quotes)
             {
+                *write = *read;
+
                 if (*read == quote)
                 {
                     in_quotes = 0;
-                    read++;
-                    continue;
                 }
 
-                *write = *read;
                 write++;
                 read++;
 
@@ -1132,6 +1131,10 @@ static int parse_command(
             {
                 in_quotes = 1;
                 quote = *read;
+
+                *write = *read;
+
+                write++;
                 read++;
 
                 continue;
@@ -1235,13 +1238,45 @@ static void expand_variables(
     long input_index = 0;
     long output_index = 0;
 
+    char quote = 0;
+
     while (argument[input_index] != '\0' &&
            output_index < output_size - 1)
     {
-        if (argument[input_index] != '$')
+        char current = argument[input_index];
+
+        if (quote != 0)
         {
-            output[output_index++] =
-                argument[input_index++];
+            if (current == quote)
+            {
+                quote = 0;
+                input_index++;
+
+                continue;
+            }
+
+            if (quote == '\'')
+            {
+                output[output_index++] = current;
+                input_index++;
+
+                continue;
+            }
+        }
+
+        if (current == '"' ||
+            current == '\'')
+        {
+            quote = current;
+            input_index++;
+
+            continue;
+        }
+
+        if (current != '$')
+        {
+            output[output_index++] = current;
+            input_index++;
 
             continue;
         }
@@ -1251,8 +1286,8 @@ static void expand_variables(
         if (argument[input_index] == '?')
         {
             char status[32];
-
             int status_length = 0;
+
             int value = last_status;
 
             if (value == 0)
@@ -1266,7 +1301,7 @@ static void expand_variables(
 
                 if (value < 0)
                 {
-                    status[reversed_length++] = '-';
+                    reversed[reversed_length++] = '-';
                     value = -value;
                 }
 
@@ -1279,8 +1314,8 @@ static void expand_variables(
                 }
 
                 for (int i = reversed_length - 1;
-                    i >= 0;
-                    i--)
+                     i >= 0;
+                     i--)
                 {
                     status[status_length++] =
                         reversed[i];
@@ -1288,12 +1323,11 @@ static void expand_variables(
             }
 
             for (int i = 0;
-                i < status_length &&
-                output_index < output_size - 1;
-                i++)
+                 i < status_length &&
+                 output_index < output_size - 1;
+                 i++)
             {
-                output[output_index++] =
-                    status[i];
+                output[output_index++] = status[i];
             }
 
             input_index++;
@@ -1324,8 +1358,6 @@ static void expand_variables(
 
         name[name_length] = '\0';
 
-        int found = 0;
-
         for (int i = 0; i < environment_count; i++)
         {
             if (environment_name_equals(
@@ -1348,12 +1380,9 @@ static void expand_variables(
                         environment[i][value_start + j];
                 }
 
-                found = 1;
                 break;
             }
         }
-
-        (void)found;
     }
 
     output[output_index] = '\0';
