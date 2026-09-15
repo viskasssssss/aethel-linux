@@ -25,7 +25,7 @@ KERNEL_DIR = kernel
 
 CFLAGS = -nostdlib -ffreestanding
 
-.PHONY: all init shell initramfs run clean
+.PHONY: all init shell log initramfs run clean
 
 all: init shell initramfs
 
@@ -33,10 +33,15 @@ init: $(ROOTFS_DIR)/init
 
 shell: $(ROOTFS_DIR)/shell
 
-$(ROOTFS_DIR)/init: $(BUILD_DIR)/start.o $(BUILD_DIR)/syscall.o $(BUILD_DIR)/init.o
+log: $(BUILD_DIR)/log.o
+
+$(BUILD_DIR)/log.o: src/log.c src/log.h src/syscall.h
+	$(CC) -c $(CFLAGS) $< -o $@
+
+$(ROOTFS_DIR)/init: $(BUILD_DIR)/start.o $(BUILD_DIR)/syscall.o $(BUILD_DIR)/log.o $(BUILD_DIR)/init.o
 	$(LD) $^ -o $@
 
-$(ROOTFS_DIR)/shell: $(BUILD_DIR)/start.o $(BUILD_DIR)/syscall.o $(BUILD_DIR)/shell.o
+$(ROOTFS_DIR)/shell: $(BUILD_DIR)/start.o $(BUILD_DIR)/syscall.o $(BUILD_DIR)/log.o $(BUILD_DIR)/shell.o
 	$(LD) $^ -o $@
 
 $(BUILD_DIR)/start.o: src/start.S

@@ -18,6 +18,7 @@ along with Aethel. If not, see <https://www.gnu.org/licenses/>.
 */
 
 #include "syscall.h"
+#include "log.h"
 
 int main(void)
 {
@@ -31,23 +32,10 @@ int main(void)
 
     if (result < 0)
     {
-        const char message[] =
-            "init: failed to mount /proc\n";
-
-        sys_write(
-            1,
-            message,
-            sizeof(message) - 1
-        );
+        log_error("init: failed to mount /proc\n");
     }
 
-    const char message[] = "Hello from Aethel Linux!\n";
-
-    sys_write(
-        1,
-        message,
-        sizeof(message) - 1
-    );
+    log_write("Hello from Aethel Linux!\n");
 
     while (1)
     {

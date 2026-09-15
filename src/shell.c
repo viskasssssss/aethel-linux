@@ -19,6 +19,7 @@ along with Aethel. If not, see <https://www.gnu.org/licenses/>.
 
 #include "syscall.h"
 #include "shell.h"
+#include "log.h"
 
 #define TCGETS 0x5401
 #define TCSETS 0x5402
@@ -28,6 +29,8 @@ along with Aethel. If not, see <https://www.gnu.org/licenses/>.
 
 #define VMIN 6
 #define VTIME 5
+
+#define DT_DIR 4
 
 static char *path_value;
 
@@ -277,13 +280,22 @@ static int command_help(
         "Commands:\n"
         "  help\n"
         "  echo <text>\n"
+        "  ls <dir>\n"
+        "  cd <dir>\n"
+        "  pwd\n"
+        "  cat <file>\n"
+        "  mkdir <file>\n"
+        "  rmdir <file>\n"
+        "  touch <file>\n"
+        "  rm <file>\n"
+        "  cp <a> <b>\n"
+        "  mv <a> <b>\n"
+        "  env\n"
+        "  export <var>\n"
+        "  unset <var>\n"
         "  exit\n";
 
-    sys_write(
-        1,
-        message,
-        sizeof(message) - 1
-    );
+    log_info(message);
 
     return 0;
 }
@@ -295,17 +307,13 @@ static int command_echo(
 {
     for (int i = 1; i < argc; i++)
     {
-        sys_write(
-            1,
-            argv[i],
-            string_length(argv[i])
-        );
+        log_write(argv[i]);
 
         if (i + 1 < argc)
-            sys_write(1, " ", 1);
+            log_write(" ");
     }
 
-    sys_write(1, "\n", 1);
+    log_write("\n");
 
     return 0;
 }
@@ -355,11 +363,7 @@ static int command_ls(
 
     if (fd < 0)
     {
-        sys_write(
-            1,
-            "ls: cannot open directory\n",
-            27
-        );
+        log_error("ls: cannot open directory\n");
 
         return 1;
     }
@@ -374,11 +378,7 @@ static int command_ls(
 
     if (count < 0)
     {
-        sys_write(
-            1,
-            "ls: cannot read directory\n",
-            27
-        );
+        log_error("ls: cannot read directory\n");
 
         sys_close(fd);
 
@@ -393,17 +393,17 @@ static int command_ls(
             (struct linux_dirent64 *)
             (buffer + position);
 
-        sys_write(
-            1,
-            entry->name,
-            string_length(entry->name)
-        );
+        if (entry->type == DT_DIR)
+        {
+            log_info(entry->name);
+            log_write("/");
+        }
+        else
+        {
+            log_write(entry->name);
+        }
 
-        sys_write(
-            1,
-            "\n",
-            1
-        );
+        log_write("\n");
 
         position += entry->record_length;
     }
@@ -420,11 +420,7 @@ static int command_cd(
 {
     if (argc < 2)
     {
-        sys_write(
-            1,
-            "cd: missing argument\n",
-            21
-        );
+        log_error("cd: missing argument\n");
 
         return 1;
     }
@@ -433,11 +429,7 @@ static int command_cd(
 
     if (result < 0)
     {
-        sys_write(
-            1,
-            "cd: cannot change directory\n",
-            29
-        );
+        log_error("cd: cannot change directory\n");
 
         return 1;
     }
@@ -460,26 +452,13 @@ static int command_pwd(
 
     if (count < 0)
     {
-        sys_write(
-            1,
-            "pwd: cannot get current directory\n",
-            34
-        );
+        log_error("pwd: cannot get current directory\n");
 
         return 1;
     }
 
-    sys_write(
-        1,
-        buffer,
-        count
-    );
-
-    sys_write(
-        1,
-        "\n",
-        1
-    );
+    log_write(buffer);
+    log_write("\n");
 
     return 0;
 }
@@ -521,11 +500,7 @@ static int command_cat(
             break;
         }
 
-        sys_write(
-            1,
-            buffer,
-            count
-        );
+        log_write(buffer);
     }
 
     if (argc == 2)
@@ -543,11 +518,7 @@ static int command_mkdir(
 {
     if (argc < 2)
     {
-        sys_write(
-            1,
-            "mkdir: missing operand\n",
-            23
-        );
+        log_error("mkdir: missing operand\n");
 
         return 1;
     }
@@ -559,11 +530,7 @@ static int command_mkdir(
 
     if (result < 0)
     {
-        sys_write(
-            1,
-            "mkdir: cannot create directory\n",
-            32
-        );
+        log_error("mkdir: cannot create directory\n");
 
         return 1;
     }
@@ -578,11 +545,7 @@ static int command_touch(
 {
     if (argc < 2)
     {
-        sys_write(
-            1,
-            "touch: missing operand\n",
-            23
-        );
+        log_error("touch: missing operand\n");
 
         return 1;
     }
@@ -596,11 +559,7 @@ static int command_touch(
 
     if (fd < 0)
     {
-        sys_write(
-            1,
-            "touch: cannot create file\n",
-            27
-        );
+        log_error("touch: cannot create file\n");
 
         return 1;
     }
@@ -617,11 +576,7 @@ static int command_rm(
 {
     if (argc < 2)
     {
-        sys_write(
-            1,
-            "rm: missing operand\n",
-            21
-        );
+        log_error("rm: missing operand\n");
 
         return 1;
     }
@@ -632,11 +587,7 @@ static int command_rm(
 
     if (result < 0)
     {
-        sys_write(
-            1,
-            "rm: cannot remove file\n",
-            24
-        );
+        log_error("rm: cannot remove file\n");
 
         return 1;
     }
@@ -651,11 +602,7 @@ static int command_cp(
 {
     if (argc < 3)
     {
-        sys_write(
-            1,
-            "cp: missing operand\n",
-            21
-        );
+        log_error("cp: missing operand\n");
 
         return 1;
     }
@@ -669,11 +616,7 @@ static int command_cp(
 
     if (source < 0)
     {
-        sys_write(
-            1,
-            "cp: cannot open source\n",
-            24
-        );
+        log_error("cp: cannot open source\n");
 
         return 1;
     }
@@ -687,11 +630,7 @@ static int command_cp(
 
     if (destination < 0)
     {
-        sys_write(
-            1,
-            "cp: cannot create destination\n",
-            31
-        );
+        log_error("cp: cannot create destination\n");
 
         sys_close(source);
 
@@ -734,11 +673,7 @@ static int command_mv(
 {
     if (argc < 3)
     {
-        sys_write(
-            1,
-            "mv: missing operand\n",
-            21
-        );
+        log_error("mv: missing operand\n");
 
         return 1;
     }
@@ -750,11 +685,7 @@ static int command_mv(
 
     if (result < 0)
     {
-        sys_write(
-            1,
-            "mv: cannot move file\n",
-            22
-        );
+        log_error("mv: cannot move file\n");
 
         return 1;
     }
@@ -769,11 +700,7 @@ static int command_rmdir(
 {
     if (argc < 2)
     {
-        sys_write(
-            1,
-            "rmdir: missing operand\n",
-            23
-        );
+        log_error("rmdir: missing operand\n");
 
         return 1;
     }
@@ -784,11 +711,7 @@ static int command_rmdir(
 
     if (result < 0)
     {
-        sys_write(
-            1,
-            "rmdir: cannot remove directory\n",
-            32
-        );
+        log_error("rmdir: cannot remove directory\n");
 
         return 1;
     }
@@ -808,17 +731,8 @@ static int command_env(
          environment[i] != 0;
          i++)
     {
-        sys_write(
-            1,
-            environment[i],
-            string_length(environment[i])
-        );
-
-        sys_write(
-            1,
-            "\n",
-            1
-        );
+        log_write(environment[i]);
+        log_write("\n");
     }
 
     return 0;
@@ -833,11 +747,7 @@ static int command_export(
     {
         if (set_environment(argv[i]) < 0)
         {
-            sys_write(
-                1,
-                "export: invalid variable\n",
-                27
-            );
+            log_error("export: invalid variable\n");
 
             return 1;
         }
@@ -1207,11 +1117,7 @@ static long spawn_external(
             environment
         );
 
-        sys_write(
-            1,
-            "shell: exec failed\n",
-            20
-        );
+        log_error("shell: exec failed\n");
 
         sys_exit(1);
     }
@@ -1415,26 +1321,13 @@ static void print_prompt(void)
 
     if (count < 0)
     {
-        sys_write(
-            1,
-            "aethel> ",
-            8
-        );
+        log_info("aethel> ");
 
         return;
     }
 
-    sys_write(
-        1,
-        path,
-        count
-    );
-
-    sys_write(
-        1,
-        ">",
-        1
-    );
+    log_info(path);
+    log_info("> ");
 }
 
 static int execute_external(
@@ -1446,11 +1339,7 @@ static int execute_external(
 
     if (pid < 0)
     {
-        sys_write(
-            1,
-            "shell: fork failed\n",
-            20
-        );
+        log_error("shell: fork failed\n");
 
         return 1;
     }
@@ -1463,11 +1352,7 @@ static int execute_external(
             environment
         );
 
-        sys_write(
-            1,
-            "shell: exec failed\n",
-            20
-        );
+        log_error("shell: exec failed\n");
 
         sys_exit(1);
     }
@@ -1594,11 +1479,7 @@ static int execute_command(
     {
         if (redirection + 1 >= argc)
         {
-            sys_write(
-                1,
-                "shell: missing output file\n",
-                27
-            );
+            log_error("shell: missing output file\n");
 
             return 1;
         }
@@ -1639,11 +1520,7 @@ static int execute_command(
                 path_value
             ))
             {
-                sys_write(
-                    1,
-                    "Command not found\n",
-                    19
-                );
+                log_error("Command not found\n");
 
                 return 1;
             }
@@ -1666,11 +1543,7 @@ static int execute_command(
             )
         )
         {
-            sys_write(
-                1,
-                "Invalid arguments\n",
-                19
-            );
+            log_error("Invalid arguments\n");
 
             return 1;
         }
@@ -1699,11 +1572,7 @@ static int execute_command(
 
         if (output < 0)
         {
-            sys_write(
-                1,
-                "shell: cannot open output file\n",
-                31
-            );
+            log_error("shell: cannot open output file\n");
 
             return 1;
         }
