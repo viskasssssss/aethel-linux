@@ -23,6 +23,11 @@ _start:
     mov (%rsp), %rdi
     lea 8(%rsp), %rsi
 
+    mov %rdi, %rdx
+    add $1, %rdx
+    imul $8, %rdx, %rdx
+    add %rsi, %rdx
+
     call main
 
     mov %rax, %rdi

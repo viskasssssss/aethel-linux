@@ -399,3 +399,113 @@ void sys_pause(void)
 {
     syscall0(34);
 }
+
+long sys_uname(struct utsname *buffer)
+{
+    long result;
+
+    __asm__ volatile (
+        "syscall"
+        : "=a"(result)
+        : "a"(63),
+          "D"(buffer)
+        : "rcx", "r11", "memory"
+    );
+
+    return result;
+}
+
+long sys_sethostname(const char *name, long length)
+{
+    long result;
+
+    __asm__ volatile (
+        "syscall"
+        : "=a"(result)
+        : "a"(170),
+          "D"(name),
+          "S"(length)
+        : "rcx", "r11", "memory"
+    );
+
+    return result;
+}
+
+long sys_nanosleep(
+    const struct timespec *request,
+    struct timespec *remaining
+)
+{
+    long result;
+
+    __asm__ volatile (
+        "syscall"
+        : "=a"(result)
+        : "a"(35),
+          "D"(request),
+          "S"(remaining)
+        : "rcx", "r11", "memory"
+    );
+
+    return result;
+}
+
+long sys_kill(int pid, int signal)
+{
+    long result;
+
+    __asm__ volatile (
+        "syscall"
+        : "=a"(result)
+        : "a"(62),
+          "D"(pid),
+          "S"(signal)
+        : "rcx", "r11", "memory"
+    );
+
+    return result;
+}
+
+long sys_clock_gettime(
+    int clock_id,
+    struct timespec *time
+)
+{
+    long result;
+
+    __asm__ volatile (
+        "syscall"
+        : "=a"(result)
+        : "a"(228),
+          "D"(clock_id),
+          "S"(time)
+        : "rcx", "r11", "memory"
+    );
+
+    return result;
+}
+
+long sys_newfstatat(
+    int dirfd,
+    const char *path,
+    struct stat *buffer,
+    int flags
+)
+{
+    long result;
+
+    register long r10 __asm__("r10") = flags;
+
+    __asm__ volatile (
+        "syscall"
+        : "=a"(result)
+        : "a"(262),
+          "D"(dirfd),
+          "S"(path),
+          "d"(buffer),
+          "r"(r10)
+        : "rcx", "r11", "memory"
+    );
+
+    return result;
+}

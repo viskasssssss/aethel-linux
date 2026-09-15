@@ -17,33 +17,19 @@ You should have received a copy of the GNU General Public License
 along with Aethel. If not, see <https://www.gnu.org/licenses/>.
 */
 
-#pragma once
-
+#include "log.h"
 #include "syscall.h"
 
-enum log_color
-{
-    LOG_COLOR_DEFAULT,
-    LOG_COLOR_RED,
-    LOG_COLOR_GREEN,
-    LOG_COLOR_YELLOW,
-    LOG_COLOR_BLUE,
-    LOG_COLOR_MAGENTA,
-    LOG_COLOR_CYAN,
-    LOG_COLOR_WHITE
-};
+int main(int argc, char **argv) {
+    for (int i = 1; i < argc; i++)
+    {
+        log_write(argv[i]);
 
-void log_write(const char *text);
-void log_write_length(const char *text, long length);
-void log_number(long number);
-void log_number_padded(long number, long width);
+        if (i + 1 < argc)
+            log_write(" ");
+    }
 
-void log_color(enum log_color color);
-void log_reset_color(void);
+    log_write("\n");
 
-void log_info(const char *text);
-void log_success(const char *text);
-void log_warning(const char *text);
-void log_error(const char *text);
-
-void log_reset(void);
+    return 0;
+}

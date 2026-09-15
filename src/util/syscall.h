@@ -19,6 +19,7 @@ along with Aethel. If not, see <https://www.gnu.org/licenses/>.
 
 #pragma once
 
+#define CLOCK_REALTIME 0
 #define DT_DIR 4
 
 struct linux_dirent64
@@ -30,6 +31,49 @@ struct linux_dirent64
     unsigned char type;
 
     char name[];
+};
+
+struct utsname
+{
+    char sysname[65];
+    char nodename[65];
+    char release[65];
+    char version[65];
+    char machine[65];
+    char domainname[65];
+};
+
+struct timespec
+{
+    long seconds;
+    long nanoseconds;
+};
+
+struct stat
+{
+    unsigned long dev;
+    unsigned long inode;
+    unsigned long nlink;
+
+    unsigned int mode;
+    unsigned int uid;
+    unsigned int gid;
+
+    unsigned long rdev;
+    long size;
+    long block_size;
+    long blocks;
+
+    long atime;
+    long atime_nsec;
+
+    long mtime;
+    long mtime_nsec;
+
+    long ctime;
+    long ctime_nsec;
+
+    long unused[3];
 };
 
 long sys_read(
@@ -126,7 +170,30 @@ long sys_ioctl(
     void *argument
 );
 
+long sys_uname(struct utsname *buffer);
+
+long sys_sethostname(const char *name, long length);
+
+long sys_nanosleep(
+    const struct timespec *request,
+    struct timespec *remaining
+);
+
+long sys_clock_gettime(
+    int clock_id,
+    struct timespec *time
+);
+
+long sys_newfstatat(
+    int dirfd,
+    const char *path,
+    struct stat *buffer,
+    int flags
+);
+
 long sys_pipe(int pipefd[2]);
+
+long sys_kill(int pid, int signal);
 
 void sys_exit(int status);
 

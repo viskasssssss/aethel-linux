@@ -59,6 +59,81 @@ void log_write_length(
     );
 }
 
+void log_number(long number)
+{
+    char buffer[32];
+    long index = 0;
+
+    if (number == 0)
+    {
+        sys_write(1, "0", 1);
+        return;
+    }
+
+    if (number < 0)
+    {
+        sys_write(1, "-", 1);
+        number = -number;
+    }
+
+    while (number > 0)
+    {
+        buffer[index++] = '0' + (number % 10);
+        number /= 10;
+    }
+
+    while (index > 0)
+    {
+        index--;
+
+        sys_write(
+            1,
+            &buffer[index],
+            1
+        );
+    }
+}
+
+void log_number_padded(long number, long width)
+{
+    char buffer[32];
+    long index = 0;
+
+    if (number == 0)
+    {
+        while (index < width - 1)
+        {
+            buffer[index++] = '0';
+        }
+
+        buffer[index++] = '0';
+    }
+    else
+    {
+        while (number > 0)
+        {
+            buffer[index++] = '0' + (number % 10);
+            number /= 10;
+        }
+
+        while (index < width)
+        {
+            buffer[index++] = '0';
+        }
+    }
+
+    while (index > 0)
+    {
+        index--;
+
+        sys_write(
+            1,
+            &buffer[index],
+            1
+        );
+    }
+}
+
 void log_color(enum log_color color)
 {
     if (color < LOG_COLOR_DEFAULT ||

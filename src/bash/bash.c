@@ -34,7 +34,7 @@ along with Aethel. If not,  see <https://www.gnu.org/licenses/>.
 #define MAX_ARGUMENT_LENGTH 256
 
 #define AEBASH_VERSION_MAJOR 1
-#define AEBASH_VERSION_MINOR 0
+#define AEBASH_VERSION_MINOR 1
 #define AEBASH_VERSION_PATCH 0
 
 #define AEBASH_VERSION_STRING \
@@ -1061,24 +1061,6 @@ static int command_help(
     return 0;
 }
 
-static int command_echo(
-    int argc, 
-    char **argv
-)
-{
-    for (int i = 1; i < argc; i++)
-    {
-        log_write(argv[i]);
-
-        if (i + 1 < argc)
-            log_write(" ");
-    }
-
-    log_write("\n");
-
-    return 0;
-}
-
 static int command_exit(
     int argc, 
     char **argv
@@ -1110,25 +1092,6 @@ static int command_cd(
         log_error("cd: cannot change directory\n");
 
         return 1;
-    }
-
-    return 0;
-}
-
-static int command_env(
-    int argc, 
-    char **argv
-)
-{
-    (void)argc;
-    (void)argv;
-
-    for (long i = 0;
-         environment[i] != 0;
-         i++)
-    {
-        log_write(environment[i]);
-        log_write("\n");
     }
 
     return 0;
@@ -1196,9 +1159,7 @@ static int command_unset(
 static command commands[] =
 {
     { "help", command_help, 0, 0 }, 
-    { "echo", command_echo, 0, -1 }, 
     { "cd", command_cd, 1, 1 }, 
-    { "env", command_env, 0, 0 }, 
     { "export", command_export, 1, -1 }, 
     { "unset", command_unset, 1, -1 }, 
     { "exit", command_exit, 0, 0 }

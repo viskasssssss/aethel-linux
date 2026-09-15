@@ -22,6 +22,13 @@ along with Aethel. If not, see <https://www.gnu.org/licenses/>.
 
 int main(void)
 {
+    const char *hostname = "aethel";
+
+    sys_sethostname(
+        hostname,
+        6
+    );
+
     long result = sys_mount(
         "proc",
         "/proc",
