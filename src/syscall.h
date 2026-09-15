@@ -113,6 +113,8 @@ long sys_ioctl(
     void *argument
 );
 
+long sys_pipe(int pipefd[2]);
+
 void sys_exit(int status);
 
 void sys_pause(void);

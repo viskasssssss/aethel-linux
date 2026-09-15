@@ -41,6 +41,8 @@ static char *environment[32] = {
 
 static int environment_count = 0;
 
+static int last_status = 0;
+
 struct termios
 {
     unsigned int input_flags;
@@ -487,36 +489,24 @@ static int command_cat(
     char **argv
 )
 {
-    if (argc < 2)
+    int fd = 0;
+
+    if (argc == 2)
     {
-        sys_write(
-            1,
-            "cat: missing operand\n",
-            21
+        fd = sys_openat(
+            -100,
+            argv[1],
+            0,
+            0
         );
 
-        return 1;
+        if (fd < 0)
+        {
+            return 1;
+        }
     }
 
-    int fd = sys_openat(
-        -100,
-        argv[1],
-        0,
-        0
-    );
-
-    if (fd < 0)
-    {
-        sys_write(
-            1,
-            "cat: cannot open file\n",
-            23
-        );
-
-        return 1;
-    }
-
-    char buffer[4096];
+    char buffer[512];
 
     while (1)
     {
@@ -527,7 +517,9 @@ static int command_cat(
         );
 
         if (count <= 0)
+        {
             break;
+        }
 
         sys_write(
             1,
@@ -536,7 +528,10 @@ static int command_cat(
         );
     }
 
-    sys_close(fd);
+    if (argc == 2)
+    {
+        sys_close(fd);
+    }
 
     return 0;
 }
@@ -932,7 +927,7 @@ static command commands[] =
     {
         "cat",
         command_cat,
-        1,
+        0,
         1
     },
 
@@ -1010,7 +1005,78 @@ static command commands[] =
 static int command_count =
     sizeof(commands) / sizeof(commands[0]);
 
+enum command_separator
+{
+    COMMAND_SEPARATOR_NONE,
+    COMMAND_SEPARATOR_ALWAYS,
+    COMMAND_SEPARATOR_AND,
+    COMMAND_SEPARATOR_OR,
+    COMMAND_SEPARATOR_PIPE
+};
 
+static char *find_command_separator(
+    char *input,
+    enum command_separator *separator
+)
+{
+    int in_quotes = 0;
+    char quote = 0;
+
+    *separator = COMMAND_SEPARATOR_NONE;
+
+    while (*input != '\0')
+    {
+        if (in_quotes)
+        {
+            if (*input == quote)
+            {
+                in_quotes = 0;
+            }
+
+            input++;
+            continue;
+        }
+
+        if (*input == '"' ||
+            *input == '\'')
+        {
+            in_quotes = 1;
+            quote = *input;
+            input++;
+            continue;
+        }
+
+        if (*input == '&' &&
+            input[1] == '&')
+        {
+            *separator = COMMAND_SEPARATOR_AND;
+            return input;
+        }
+
+        if (*input == '|' &&
+            input[1] == '|')
+        {
+            *separator = COMMAND_SEPARATOR_OR;
+            return input;
+        }
+
+        if (*input == '|')
+        {
+            *separator = COMMAND_SEPARATOR_PIPE;
+            return input;
+        }
+
+        if (*input == ';')
+        {
+            *separator = COMMAND_SEPARATOR_ALWAYS;
+            return input;
+        }
+
+        input++;
+    }
+
+    return 0;
+}
 
 static int parse_command(
     char *input,
@@ -1101,6 +1167,55 @@ static int parse_command(
     return argc;
 }
 
+static long spawn_external(
+    char **argv,
+    int input,
+    int output
+)
+{
+    long pid = sys_fork();
+
+    if (pid < 0)
+    {
+        return -1;
+    }
+
+    if (pid == 0)
+    {
+        if (input >= 0)
+        {
+            sys_dup2(
+                input,
+                0
+            );
+        }
+
+        if (output >= 0)
+        {
+            sys_dup2(
+                output,
+                1
+            );
+        }
+
+        sys_execve(
+            argv[0],
+            argv,
+            environment
+        );
+
+        sys_write(
+            1,
+            "shell: exec failed\n",
+            20
+        );
+
+        sys_exit(1);
+    }
+
+    return pid;
+}
+
 static int is_append_redirection(
     const char *operator
 )
@@ -1132,6 +1247,59 @@ static void expand_variables(
         }
 
         input_index++;
+
+        if (argument[input_index] == '?')
+        {
+            char status[32];
+
+            int status_length = 0;
+            int value = last_status;
+
+            if (value == 0)
+            {
+                status[status_length++] = '0';
+            }
+            else
+            {
+                char reversed[32];
+                int reversed_length = 0;
+
+                if (value < 0)
+                {
+                    status[reversed_length++] = '-';
+                    value = -value;
+                }
+
+                while (value > 0)
+                {
+                    reversed[reversed_length++] =
+                        '0' + (value % 10);
+
+                    value /= 10;
+                }
+
+                for (int i = reversed_length - 1;
+                    i >= 0;
+                    i--)
+                {
+                    status[status_length++] =
+                        reversed[i];
+                }
+            }
+
+            for (int i = 0;
+                i < status_length &&
+                output_index < output_size - 1;
+                i++)
+            {
+                output[output_index++] =
+                    status[i];
+            }
+
+            input_index++;
+
+            continue;
+        }
 
         char name[64];
         long name_length = 0;
@@ -1277,13 +1445,18 @@ static int execute_external(
 
     int status;
 
-    sys_waitpid(
+    long result = sys_waitpid(
         pid,
         &status,
         0
     );
 
-    return 0;
+    if (result < 0)
+    {
+        return 1;
+    }
+
+    return (status >> 8) & 0xff;
 }
 
 static int contains_slash(
@@ -1547,6 +1720,250 @@ static int execute_command(
     return result;
 }
 
+static long spawn_command(
+    int argc,
+    char **argv,
+    int input,
+    int output,
+    int pipe_read,
+    int pipe_write
+)
+{
+    long pid = sys_fork();
+
+    if (pid < 0)
+    {
+        return -1;
+    }
+
+    if (pid == 0)
+    {
+        if (input >= 0)
+        {
+            sys_dup2(
+                input,
+                0
+            );
+        }
+
+        if (output >= 0)
+        {
+            sys_dup2(
+                output,
+                1
+            );
+        }
+
+        if (pipe_read >= 0)
+        {
+            sys_close(pipe_read);
+        }
+
+        if (pipe_write >= 0)
+        {
+            sys_close(pipe_write);
+        }
+
+        if (input >= 0 &&
+            input != pipe_read)
+        {
+            sys_close(input);
+        }
+
+        if (output >= 0 &&
+            output != pipe_write)
+        {
+            sys_close(output);
+        }
+
+        int status = execute_command(
+            argc,
+            argv
+        );
+
+        sys_exit(status);
+    }
+
+    return pid;
+}
+
+static int execute_pipeline(
+    char *command,
+    enum command_separator *separator,
+    char **next_command
+)
+{
+    *separator = COMMAND_SEPARATOR_NONE;
+    *next_command = 0;
+
+    char *argv[16];
+
+    int input = -1;
+
+    long pids[16];
+    int pid_count = 0;
+
+    *separator = COMMAND_SEPARATOR_NONE;
+
+    while (command != 0 &&
+           *command != '\0')
+    {
+        enum command_separator separator_type;
+
+        char *current_separator =
+            find_command_separator(
+                command,
+                &separator_type
+            );
+
+        if (current_separator != 0)
+        {
+            *current_separator = '\0';
+        }
+
+        int argc = parse_command(
+            command,
+            argv,
+            16
+        );
+
+        if (argc == 0)
+        {
+            if (input >= 0)
+            {
+                sys_close(input);
+            }
+
+            return 1;
+        }
+
+        char expanded[16][256];
+
+        for (int i = 0; i < argc; i++)
+        {
+            expand_variables(
+                argv[i],
+                expanded[i],
+                sizeof(expanded[i])
+            );
+
+            argv[i] = expanded[i];
+        }
+
+        int output = -1;
+        int pipefd[2];
+
+        if (current_separator != 0 &&
+            separator_type == COMMAND_SEPARATOR_PIPE)
+        {
+            if (sys_pipe(pipefd) < 0)
+            {
+                if (input >= 0)
+                {
+                    sys_close(input);
+                }
+
+                return 1;
+            }
+
+            output = pipefd[1];
+        }
+
+        long pid = spawn_command(
+            argc,
+            argv,
+            input,
+            output,
+            output >= 0 ? pipefd[0] : -1,
+            output >= 0 ? pipefd[1] : -1
+        );
+
+        if (pid < 0)
+        {
+            if (input >= 0)
+            {
+                sys_close(input);
+            }
+
+            if (output >= 0)
+            {
+                sys_close(pipefd[0]);
+                sys_close(pipefd[1]);
+            }
+
+            return 1;
+        }
+
+        pids[pid_count++] = pid;
+
+        if (input >= 0)
+        {
+            sys_close(input);
+        }
+
+        if (output >= 0)
+        {
+            sys_close(output);
+
+            input = pipefd[0];
+        }
+        else
+        {
+            input = -1;
+        }
+
+        if (current_separator == 0)
+        {
+            break;
+        }
+
+        if (separator_type != COMMAND_SEPARATOR_PIPE)
+        {
+            *separator = separator_type;
+
+            if (separator_type == COMMAND_SEPARATOR_AND ||
+                separator_type == COMMAND_SEPARATOR_OR)
+            {
+                *next_command = current_separator + 2;
+            }
+            else
+            {
+                *next_command = current_separator + 1;
+            }
+
+            break;
+        }
+
+        command = current_separator + 1;
+    }
+
+    if (input >= 0)
+    {
+        sys_close(input);
+    }
+
+    int status = 0;
+
+    for (int i = 0; i < pid_count; i++)
+    {
+        int current_status;
+
+        sys_waitpid(
+            pids[i],
+            &current_status,
+            0
+        );
+
+        if (i == pid_count - 1)
+        {
+            status =
+                (current_status >> 8) & 0xff;
+        }
+    }
+
+    return status;
+}
+
 int main(void)
 {
     char buffer[128];
@@ -1586,32 +2003,115 @@ int main(void)
 
         buffer[count] = '\0';
 
-        int argc = parse_command(
-            buffer,
-            argv,
-            16
-        );
+        char *command = buffer;
 
-        char expanded[16][256];
+        enum command_separator previous_separator =
+            COMMAND_SEPARATOR_ALWAYS;
 
-        for (int i = 0; i < argc; i++)
+        while (command != 0 &&
+            *command != '\0')
         {
-            expand_variables(
-                argv[i],
-                expanded[i],
-                sizeof(expanded[i])
+            enum command_separator separator_type;
+
+            char *separator =
+                find_command_separator(
+                    command,
+                    &separator_type
+                );
+
+            if (separator != 0)
+            {
+                if (separator_type == COMMAND_SEPARATOR_PIPE)
+                {
+                    enum command_separator pipeline_separator;
+                    char *next_command = 0;
+
+                    last_status = execute_pipeline(
+                        command,
+                        &pipeline_separator,
+                        &next_command
+                    );
+
+                    if (pipeline_separator == COMMAND_SEPARATOR_NONE)
+                    {
+                        break;
+                    }
+
+                    previous_separator = pipeline_separator;
+                    command = next_command;
+
+                    continue;
+                }
+
+                *separator = '\0';
+
+                if (separator_type == COMMAND_SEPARATOR_AND)
+                {
+                    separator[1] = '\0';
+                }
+            }
+
+            int argc = parse_command(
+                command,
+                argv,
+                16
             );
 
-            argv[i] = expanded[i];
+            char expanded[16][256];
+
+            for (int i = 0; i < argc; i++)
+            {
+                expand_variables(
+                    argv[i],
+                    expanded[i],
+                    sizeof(expanded[i])
+                );
+
+                argv[i] = expanded[i];
+            }
+
+            if (argc > 0)
+            {
+                int execute = 1;
+
+                if (previous_separator == COMMAND_SEPARATOR_AND &&
+                    last_status != 0)
+                {
+                    execute = 0;
+                }
+
+                if (previous_separator == COMMAND_SEPARATOR_OR &&
+                    last_status == 0)
+                {
+                    execute = 0;
+                }
+
+                if (execute)
+                {
+                    last_status = execute_command(
+                        argc,
+                        argv
+                    );
+                }
+            }
+
+            if (separator == 0)
+            {
+                break;
+            }
+
+            previous_separator = separator_type;
+
+            if (separator_type == COMMAND_SEPARATOR_AND ||
+                separator_type == COMMAND_SEPARATOR_OR)
+            {
+                command = separator + 2;
+            }
+            else
+            {
+                command = separator + 1;
+            }
         }
-
-        if (argc == 0)
-            continue;
-
-        execute_command(
-            argc,
-            argv
-        );
     }
 
     return 0;

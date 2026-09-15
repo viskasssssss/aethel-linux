@@ -371,6 +371,21 @@ long sys_ioctl(
     );
 }
 
+long sys_pipe(int pipefd[2])
+{
+    long result;
+
+    __asm__ volatile (
+        "syscall"
+        : "=a"(result)
+        : "a"(22),
+          "D"(pipefd)
+        : "rcx", "r11", "memory"
+    );
+
+    return result;
+}
+
 void sys_exit(int status)
 {
     syscall1(60, status);
