@@ -1,0 +1,5 @@
+build/
+
+rootfs/bin/
+rootfs/init
+rootfs/shell

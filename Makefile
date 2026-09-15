@@ -23,17 +23,32 @@ BUILD_DIR = build
 ROOTFS_DIR = rootfs
 KERNEL_DIR = kernel
 
-CFLAGS = -nostdlib -ffreestanding
+BIN_SOURCES := $(wildcard src/bin/*.c)
+BIN_PROGRAMS := $(patsubst src/bin/%.c,$(ROOTFS_DIR)/bin/%,$(BIN_SOURCES))
+
+CFLAGS = -nostdlib -ffreestanding -Isrc
 
 .PHONY: all init shell log initramfs run clean
 
-all: init shell initramfs
+all: init shell $(BIN_PROGRAMS) initramfs
 
 init: $(ROOTFS_DIR)/init
 
 shell: $(ROOTFS_DIR)/shell
 
 log: $(BUILD_DIR)/log.o
+
+$(ROOTFS_DIR)/bin/%: src/bin/%.c \
+	$(BUILD_DIR)/start.o \
+	$(BUILD_DIR)/syscall.o \
+	$(BUILD_DIR)/log.o
+	$(CC) -c $(CFLAGS) $< -o $(BUILD_DIR)/$*.o
+	$(LD) \
+		$(BUILD_DIR)/start.o \
+		$(BUILD_DIR)/syscall.o \
+		$(BUILD_DIR)/log.o \
+		$(BUILD_DIR)/$*.o \
+		-o $@
 
 $(BUILD_DIR)/log.o: src/log.c src/log.h src/syscall.h
 	$(CC) -c $(CFLAGS) $< -o $@
@@ -56,7 +71,7 @@ $(BUILD_DIR)/init.o: src/init.c src/syscall.h
 $(BUILD_DIR)/shell.o: src/shell.c src/shell.h src/syscall.h
 	$(CC) -c $(CFLAGS) $< -o $@
 
-initramfs: init shell
+initramfs: init shell $(BIN_PROGRAMS)
 	cd $(ROOTFS_DIR) && find . -mindepth 1 -print | cpio -o -H newc > ../$(BUILD_DIR)/initramfs.cpio
 
 run: all

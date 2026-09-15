@@ -19,6 +19,19 @@ along with Aethel. If not, see <https://www.gnu.org/licenses/>.
 
 #pragma once
 
+#define DT_DIR 4
+
+struct linux_dirent64
+{
+    unsigned long inode;
+    long offset;
+
+    unsigned short record_length;
+    unsigned char type;
+
+    char name[];
+};
+
 long sys_read(
     int fd,
     void *buffer,

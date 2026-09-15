@@ -5,16 +5,16 @@ This file is part of Aethel.
 
 Aethel is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published
-by the Free Software Foundation, either version 3 of the License,
+by the Free Software Foundation,  either version 3 of the License, 
 or (at your option) any later version.
 
-Aethel is distributed in the hope that it will be useful,
+Aethel is distributed in the hope that it will be useful, 
 but WITHOUT ANY WARRANTY; without even the implied warranty of
 MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
 See the GNU General Public License for more details.
 
 You should have received a copy of the GNU General Public License
-along with Aethel. If not, see <https://www.gnu.org/licenses/>.
+along with Aethel. If not,  see <https://www.gnu.org/licenses/>.
 */
 
 #include "syscall.h"
@@ -30,10 +30,20 @@ along with Aethel. If not, see <https://www.gnu.org/licenses/>.
 #define VMIN 6
 #define VTIME 5
 
-#define DT_DIR 4
-
 #define MAX_ARGUMENTS 64
 #define MAX_ARGUMENT_LENGTH 256
+
+#define AEBASH_VERSION_MAJOR 1
+#define AEBASH_VERSION_MINOR 0
+#define AEBASH_VERSION_PATCH 0
+
+#define AEBASH_VERSION_STRING \
+    AEBASH_STRINGIFY(AEBASH_VERSION_MAJOR) "." \
+    AEBASH_STRINGIFY(AEBASH_VERSION_MINOR) "." \
+    AEBASH_STRINGIFY(AEBASH_VERSION_PATCH)
+
+#define AEBASH_STRINGIFY(x) AEBASH_STRINGIFY_IMPL(x)
+#define AEBASH_STRINGIFY_IMPL(x) #x
 
 static char *path_value;
 
@@ -68,17 +78,6 @@ struct termios
     unsigned int output_speed;
 };
 
-struct linux_dirent64
-{
-    unsigned long inode;
-    long offset;
-
-    unsigned short record_length;
-    unsigned char type;
-
-    char name[];
-};
-
 static long string_length(
     const char *string
 )
@@ -92,7 +91,7 @@ static long string_length(
 }
 
 static int string_equals(
-    const char *a,
+    const char *a, 
     const char *b
 )
 {
@@ -117,8 +116,8 @@ static void enable_raw_input(void)
     struct termios terminal;
 
     sys_ioctl(
-        0,
-        TCGETS,
+        0, 
+        TCGETS, 
         &terminal
     );
 
@@ -129,21 +128,21 @@ static void enable_raw_input(void)
     terminal.control_characters[VTIME] = 0;
 
     sys_ioctl(
-        0,
-        TCSETS,
+        0, 
+        TCSETS, 
         &terminal
     );
 }
 
 static void load_profile(
-    char *path,
+    char *path, 
     long size
 )
 {
     long fd = sys_openat(
-        -100,
-        "/etc/profile",
-        0,
+        -100, 
+        "/etc/profile", 
+        0, 
         0
     );
 
@@ -151,8 +150,8 @@ static void load_profile(
         return;
 
     long count = sys_read(
-        fd,
-        path,
+        fd, 
+        path, 
         size - 1
     );
 
@@ -206,7 +205,7 @@ static char *find_next_path(
 
 
 static int environment_name_equals(
-    const char *environment,
+    const char *environment, 
     const char *name
 )
 {
@@ -287,7 +286,7 @@ static int set_environment(
 }
 
 static int wildcard_match(
-    const char *pattern,
+    const char *pattern, 
     const char *name
 )
 {
@@ -305,7 +304,7 @@ static int wildcard_match(
             while (*name != '\0')
             {
                 if (wildcard_match(
-                        pattern,
+                        pattern, 
                         name))
                 {
                     return 1;
@@ -437,9 +436,9 @@ static int has_unquoted_wildcard(
 }
 
 static int expand_wildcard_path(
-    const char *pattern,
-    const char *prefix,
-    int *output_count,
+    const char *pattern, 
+    const char *prefix, 
+    int *output_count, 
     int max_arguments
 )
 {
@@ -596,17 +595,17 @@ static int expand_wildcard_path(
         }
 
         return expand_wildcard_path(
-            remainder,
-            next_prefix,
-            output_count,
+            remainder, 
+            next_prefix, 
+            output_count, 
             max_arguments
         );
     }
 
     long fd = sys_openat(
-        -100,
-        current_directory,
-        0,
+        -100, 
+        current_directory, 
+        0, 
         0
     );
 
@@ -622,8 +621,8 @@ static int expand_wildcard_path(
     while (1)
     {
         long count = sys_getdents64(
-            fd,
-            buffer,
+            fd, 
+            buffer, 
             sizeof(buffer)
         );
 
@@ -648,7 +647,7 @@ static int expand_wildcard_path(
             }
 
             if (wildcard_match(
-                    component,
+                    component, 
                     entry->name))
             {
                 char next_prefix[256];
@@ -719,9 +718,9 @@ static int expand_wildcard_path(
                 {
                     int result =
                         expand_wildcard_path(
-                            remainder,
-                            next_prefix,
-                            output_count,
+                            remainder, 
+                            next_prefix, 
+                            output_count, 
                             max_arguments
                         );
 
@@ -745,9 +744,9 @@ static int expand_wildcard_path(
 }
 
 static int expand_wildcard_pattern(
-    const char *pattern,
-    char **output,
-    int *output_count,
+    const char *pattern, 
+    char **output, 
+    int *output_count, 
     int max_arguments
 )
 {
@@ -814,9 +813,9 @@ static int expand_wildcard_pattern(
     }
 
     long fd = sys_openat(
-        -100,
-        directory,
-        0,
+        -100, 
+        directory, 
+        0, 
         0
     );
 
@@ -832,8 +831,8 @@ static int expand_wildcard_pattern(
     while (1)
     {
         long count = sys_getdents64(
-            fd,
-            buffer,
+            fd, 
+            buffer, 
             sizeof(buffer)
         );
 
@@ -858,7 +857,7 @@ static int expand_wildcard_pattern(
             }
 
             if (wildcard_match(
-                    wildcard,
+                    wildcard, 
                     entry->name))
             {
                 if (*output_count >= max_arguments)
@@ -955,9 +954,9 @@ static int expand_wildcard_pattern(
 }
 
 static int expand_wildcards(
-    char **argv,
-    int *argc,
-    int max_arguments,
+    char **argv, 
+    int *argc, 
+    int max_arguments, 
     int *wildcard_allowed
 )
 {
@@ -996,9 +995,9 @@ static int expand_wildcards(
 
         int result =
             expand_wildcard_path(
-                argument,
-                "",
-                &new_count,
+                argument, 
+                "", 
+                &new_count, 
                 max_arguments
             );
 
@@ -1033,7 +1032,7 @@ static int expand_wildcards(
 // BASIC
 
 static int command_help(
-    int argc,
+    int argc, 
     char **argv
 )
 {
@@ -1063,7 +1062,7 @@ static int command_help(
 }
 
 static int command_echo(
-    int argc,
+    int argc, 
     char **argv
 )
 {
@@ -1081,13 +1080,10 @@ static int command_echo(
 }
 
 static int command_exit(
-    int argc,
+    int argc, 
     char **argv
 )
 {
-    // init process will restart shell automatically when it exits, so this is useless
-    // TODO: remove this command
-
     sys_exit(0);
 
     return 0;
@@ -1095,77 +1091,8 @@ static int command_exit(
 
 // FILE SYSTEM
 
-static int command_ls(
-    int argc,
-    char **argv
-)
-{
-    const char *path = ".";
-
-    if (argc > 1)
-        path = argv[1];
-
-    int fd = sys_openat(
-        -100,
-        path,
-        0,
-        0
-    );
-
-    if (fd < 0)
-    {
-        log_error("ls: cannot open directory\n");
-
-        return 1;
-    }
-
-    char buffer[4096];
-
-    long count = sys_getdents64(
-        fd,
-        buffer,
-        sizeof(buffer)
-    );
-
-    if (count < 0)
-    {
-        log_error("ls: cannot read directory\n");
-
-        sys_close(fd);
-
-        return 1;
-    }
-
-    long position = 0;
-
-    while (position < count)
-    {
-        struct linux_dirent64 *entry =
-            (struct linux_dirent64 *)
-            (buffer + position);
-
-        if (entry->type == DT_DIR)
-        {
-            log_info(entry->name);
-            log_write("/");
-        }
-        else
-        {
-            log_write(entry->name);
-        }
-
-        log_write("\n");
-
-        position += entry->record_length;
-    }
-
-    sys_close(fd);
-
-    return 0;
-}
-
 static int command_cd(
-    int argc,
+    int argc, 
     char **argv
 )
 {
@@ -1188,284 +1115,8 @@ static int command_cd(
     return 0;
 }
 
-static int command_pwd(
-    int argc,
-    char **argv
-)
-{
-    char buffer[256];
-
-    long count = sys_readlink(
-        "/proc/self/cwd",
-        buffer,
-        sizeof(buffer) - 1
-    );
-
-    if (count < 0)
-    {
-        log_error("pwd: cannot get current directory\n");
-
-        return 1;
-    }
-
-    log_write(buffer);
-    log_write("\n");
-
-    return 0;
-}
-
-static int command_cat(
-    int argc,
-    char **argv
-)
-{
-    int fd = 0;
-
-    if (argc == 2)
-    {
-        fd = sys_openat(
-            -100,
-            argv[1],
-            0,
-            0
-        );
-
-        if (fd < 0)
-        {
-            return 1;
-        }
-    }
-
-    char buffer[512];
-
-    while (1)
-    {
-        long count = sys_read(
-            fd,
-            buffer,
-            sizeof(buffer)
-        );
-
-        if (count <= 0)
-        {
-            break;
-        }
-
-        log_write(buffer);
-    }
-
-    if (argc == 2)
-    {
-        sys_close(fd);
-    }
-
-    return 0;
-}
-
-static int command_mkdir(
-    int argc,
-    char **argv
-)
-{
-    if (argc < 2)
-    {
-        log_error("mkdir: missing operand\n");
-
-        return 1;
-    }
-
-    long result = sys_mkdir(
-        argv[1],
-        0755
-    );
-
-    if (result < 0)
-    {
-        log_error("mkdir: cannot create directory\n");
-
-        return 1;
-    }
-
-    return 0;
-}
-
-static int command_touch(
-    int argc,
-    char **argv
-)
-{
-    for (int i = 1; i < argc; i++)
-    {
-        int fd = sys_openat(
-            -100,
-            argv[i],
-            64,
-            0644
-        );
-
-        if (fd < 0)
-        {
-            return 1;
-        }
-
-        sys_close(fd);
-    }
-
-    return 0;
-}
-
-static int command_rm(
-    int argc,
-    char **argv
-)
-{
-    if (argc < 2)
-    {
-        log_error("rm: missing operand\n");
-
-        return 1;
-    }
-
-    long result = sys_unlink(
-        argv[1]
-    );
-
-    if (result < 0)
-    {
-        log_error("rm: cannot remove file\n");
-
-        return 1;
-    }
-
-    return 0;
-}
-
-static int command_cp(
-    int argc,
-    char **argv
-)
-{
-    if (argc < 3)
-    {
-        log_error("cp: missing operand\n");
-
-        return 1;
-    }
-
-    int source = sys_openat(
-        -100,
-        argv[1],
-        0,
-        0
-    );
-
-    if (source < 0)
-    {
-        log_error("cp: cannot open source\n");
-
-        return 1;
-    }
-
-    int destination = sys_openat(
-        -100,
-        argv[2],
-        577,
-        0644
-    );
-
-    if (destination < 0)
-    {
-        log_error("cp: cannot create destination\n");
-
-        sys_close(source);
-
-        return 1;
-    }
-
-    char buffer[4096];
-
-    while (1)
-    {
-        long count = sys_read(
-            source,
-            buffer,
-            sizeof(buffer)
-        );
-
-        if (count <= 0)
-            break;
-
-        long written = sys_write(
-            destination,
-            buffer,
-            count
-        );
-
-        if (written < 0)
-            break;
-    }
-
-    sys_close(source);
-    sys_close(destination);
-
-    return 0;
-}
-
-static int command_mv(
-    int argc,
-    char **argv
-)
-{
-    if (argc < 3)
-    {
-        log_error("mv: missing operand\n");
-
-        return 1;
-    }
-
-    long result = sys_rename(
-        argv[1],
-        argv[2]
-    );
-
-    if (result < 0)
-    {
-        log_error("mv: cannot move file\n");
-
-        return 1;
-    }
-
-    return 0;
-}
-
-static int command_rmdir(
-    int argc,
-    char **argv
-)
-{
-    if (argc < 2)
-    {
-        log_error("rmdir: missing operand\n");
-
-        return 1;
-    }
-
-    long result = sys_rmdir(
-        argv[1]
-    );
-
-    if (result < 0)
-    {
-        log_error("rmdir: cannot remove directory\n");
-
-        return 1;
-    }
-
-    return 0;
-}
-
 static int command_env(
-    int argc,
+    int argc, 
     char **argv
 )
 {
@@ -1484,7 +1135,7 @@ static int command_env(
 }
 
 static int command_export(
-    int argc,
+    int argc, 
     char **argv
 )
 {
@@ -1502,7 +1153,7 @@ static int command_export(
 }
 
 static int command_unset(
-    int argc,
+    int argc, 
     char **argv
 )
 {
@@ -1511,7 +1162,7 @@ static int command_unset(
         for (int j = 0; j < environment_count; j++)
         {
             if (!environment_name_equals(
-                    environment[j],
+                    environment[j], 
                     argv[i]))
             {
                 continue;
@@ -1544,117 +1195,13 @@ static int command_unset(
 
 static command commands[] =
 {
-    {
-        "help",
-        command_help,
-        0,
-        0
-    },
-
-    {
-        "echo",
-        command_echo,
-        0,
-        -1
-    },
-
-    {
-        "ls",
-        command_ls,
-        0,
-        1
-    },
-
-    {
-        "cd",
-        command_cd,
-        1,
-        1
-    },
-
-    {
-        "pwd",
-        command_pwd,
-        0,
-        0
-    },
-
-    {
-        "cat",
-        command_cat,
-        0,
-        1
-    },
-
-    {
-        "mkdir",
-        command_mkdir,
-        1,
-        1
-    },
-
-    {
-        "touch",
-        command_touch,
-        1,
-        MAX_ARGUMENTS
-    },
-
-    {
-        "rm",
-        command_rm,
-        1,
-        1
-    },
-
-    {
-        "cp",
-        command_cp,
-        2,
-        2
-    },
-
-    {
-        "mv",
-        command_mv,
-        2,
-        2
-    },
-
-    {
-        "rmdir",
-        command_rmdir,
-        1,
-        1
-    },
-
-    {
-        "env",
-        command_env,
-        0,
-        0
-    },
-
-    {
-        "export",
-        command_export,
-        1,
-        -1
-    },
-
-    {
-        "unset",
-        command_unset,
-        1,
-        -1
-    },
-
-    {
-        "exit",
-        command_exit,
-        0,
-        0
-    }
+    { "help", command_help, 0, 0 }, 
+    { "echo", command_echo, 0, -1 }, 
+    { "cd", command_cd, 1, 1 }, 
+    { "env", command_env, 0, 0 }, 
+    { "export", command_export, 1, -1 }, 
+    { "unset", command_unset, 1, -1 }, 
+    { "exit", command_exit, 0, 0 }
 };
 
 static int command_count =
@@ -1662,15 +1209,15 @@ static int command_count =
 
 enum command_separator
 {
-    COMMAND_SEPARATOR_NONE,
-    COMMAND_SEPARATOR_ALWAYS,
-    COMMAND_SEPARATOR_AND,
-    COMMAND_SEPARATOR_OR,
+    COMMAND_SEPARATOR_NONE, 
+    COMMAND_SEPARATOR_ALWAYS, 
+    COMMAND_SEPARATOR_AND, 
+    COMMAND_SEPARATOR_OR, 
     COMMAND_SEPARATOR_PIPE
 };
 
 static char *find_command_separator(
-    char *input,
+    char *input, 
     enum command_separator *separator
 )
 {
@@ -1734,8 +1281,8 @@ static char *find_command_separator(
 }
 
 static int parse_command(
-    char *input,
-    char **argv,
+    char *input, 
+    char **argv, 
     int max_arguments
 )
 {
@@ -1826,8 +1373,8 @@ static int parse_command(
 }
 
 static long spawn_external(
-    char **argv,
-    int input,
+    char **argv, 
+    int input, 
     int output
 )
 {
@@ -1843,7 +1390,7 @@ static long spawn_external(
         if (input >= 0)
         {
             sys_dup2(
-                input,
+                input, 
                 0
             );
         }
@@ -1851,14 +1398,14 @@ static long spawn_external(
         if (output >= 0)
         {
             sys_dup2(
-                output,
+                output, 
                 1
             );
         }
 
         sys_execve(
-            argv[0],
-            argv,
+            argv[0], 
+            argv, 
             environment
         );
 
@@ -1875,14 +1422,14 @@ static int is_append_redirection(
 )
 {
     return string_equals(
-        operator,
+        operator, 
         ">>"
     );
 }
 
 static void expand_variables(
-    char *argument,
-    char *output,
+    char *argument, 
+    char *output, 
     long output_size
 )
 {
@@ -2012,7 +1559,7 @@ static void expand_variables(
         for (int i = 0; i < environment_count; i++)
         {
             if (environment_name_equals(
-                    environment[i],
+                    environment[i], 
                     name))
             {
                 long value_start =
@@ -2040,14 +1587,14 @@ static void expand_variables(
 }
 
 static int find_redirection(
-    int argc,
+    int argc, 
     char **argv
 )
 {
     for (int i = 1; i < argc; i++)
     {
-        if (string_equals(argv[i], ">") ||
-            string_equals(argv[i], ">>"))
+        if (string_equals(argv[i],  ">") ||
+            string_equals(argv[i],  ">>"))
             return i;
     }
 
@@ -2059,14 +1606,14 @@ static void print_prompt(void)
     char path[128];
 
     long count = sys_readlink(
-        "/proc/self/cwd",
-        path,
+        "/proc/self/cwd", 
+        path, 
         sizeof(path) - 1
     );
 
     if (count < 0)
     {
-        log_info("aethel> ");
+        log_info("aethel$ ");
 
         return;
     }
@@ -2074,11 +1621,11 @@ static void print_prompt(void)
     path[count] = '\0';
 
     log_info(path);
-    log_write("> ");
+    log_write("$ ");
 }
 
 static int execute_external(
-    int argc,
+    int argc, 
     char **argv
 )
 {
@@ -2094,8 +1641,8 @@ static int execute_external(
     if (pid == 0)
     {
         sys_execve(
-            argv[0],
-            argv,
+            argv[0], 
+            argv, 
             environment
         );
 
@@ -2107,8 +1654,8 @@ static int execute_external(
     int status;
 
     long result = sys_waitpid(
-        pid,
-        &status,
+        pid, 
+        &status, 
         0
     );
 
@@ -2134,9 +1681,9 @@ static int contains_slash(
 }
 
 static int find_executable(
-    const char *name,
-    char *path,
-    long size,
+    const char *name, 
+    char *path, 
+    long size, 
     const char *path_value
 )
 {
@@ -2193,9 +1740,9 @@ static int find_executable(
         path[position] = '\0';
 
         long fd = sys_openat(
-            -100,
-            path,
-            0,
+            -100, 
+            path, 
+            0, 
             0
         );
 
@@ -2211,12 +1758,12 @@ static int find_executable(
 }
 
 static int execute_command(
-    int argc,
+    int argc, 
     char **argv
 )
 {
     int redirection = find_redirection(
-        argc,
+        argc, 
         argv
     );
 
@@ -2239,7 +1786,7 @@ static int execute_command(
     for (int i = 0; i < command_count; i++)
     {
         if (string_equals(
-            argv[0],
+            argv[0], 
             commands[i].name
         ))
         {
@@ -2261,9 +1808,9 @@ static int execute_command(
             char path[128];
 
             if (!find_executable(
-                argv[0],
-                path,
-                sizeof(path),
+                argv[0], 
+                path, 
+                sizeof(path), 
                 path_value
             ))
             {
@@ -2311,9 +1858,9 @@ static int execute_command(
         }
 
         output = sys_openat(
-            -100,
-            argv[redirection + 1],
-            flags,
+            -100, 
+            argv[redirection + 1], 
+            flags, 
             0644
         );
 
@@ -2327,7 +1874,7 @@ static int execute_command(
         saved_stdout = sys_dup(1);
 
         sys_dup2(
-            output,
+            output, 
             1
         );
 
@@ -2339,14 +1886,14 @@ static int execute_command(
     if (external)
     {
         result = execute_external(
-            command_argc,
+            command_argc, 
             argv
         );
     }
     else
     {
         result = commands[command_index].function(
-            command_argc,
+            command_argc, 
             argv
         );
     }
@@ -2354,7 +1901,7 @@ static int execute_command(
     if (redirection >= 0)
     {
         sys_dup2(
-            saved_stdout,
+            saved_stdout, 
             1
         );
 
@@ -2366,11 +1913,11 @@ static int execute_command(
 }
 
 static long spawn_command(
-    int argc,
-    char **argv,
-    int input,
-    int output,
-    int pipe_read,
+    int argc, 
+    char **argv, 
+    int input, 
+    int output, 
+    int pipe_read, 
     int pipe_write
 )
 {
@@ -2386,7 +1933,7 @@ static long spawn_command(
         if (input >= 0)
         {
             sys_dup2(
-                input,
+                input, 
                 0
             );
         }
@@ -2394,7 +1941,7 @@ static long spawn_command(
         if (output >= 0)
         {
             sys_dup2(
-                output,
+                output, 
                 1
             );
         }
@@ -2422,7 +1969,7 @@ static long spawn_command(
         }
 
         int status = execute_command(
-            argc,
+            argc, 
             argv
         );
 
@@ -2433,8 +1980,8 @@ static long spawn_command(
 }
 
 static int execute_pipeline(
-    char *command,
-    enum command_separator *separator,
+    char *command, 
+    enum command_separator *separator, 
     char **next_command
 )
 {
@@ -2457,7 +2004,7 @@ static int execute_pipeline(
 
         char *current_separator =
             find_command_separator(
-                command,
+                command, 
                 &separator_type
             );
 
@@ -2467,8 +2014,8 @@ static int execute_pipeline(
         }
 
         int argc = parse_command(
-            command,
-            argv,
+            command, 
+            argv, 
             MAX_ARGUMENTS
         );
 
@@ -2497,8 +2044,8 @@ static int execute_pipeline(
         for (int i = 0; i < argc; i++)
         {
             expand_variables(
-                argv[i],
-                expanded[i],
+                argv[i], 
+                expanded[i], 
                 sizeof(expanded[i])
             );
 
@@ -2506,9 +2053,9 @@ static int execute_pipeline(
         }
 
         expand_wildcards(
-            argv,
-            &argc,
-            MAX_ARGUMENTS,
+            argv, 
+            &argc, 
+            MAX_ARGUMENTS, 
             wildcard_allowed
         );
 
@@ -2532,11 +2079,11 @@ static int execute_pipeline(
         }
 
         long pid = spawn_command(
-            argc,
-            argv,
-            input,
-            output,
-            output >= 0 ? pipefd[0] : -1,
+            argc, 
+            argv, 
+            input, 
+            output, 
+            output >= 0 ? pipefd[0] : -1, 
             output >= 0 ? pipefd[1] : -1
         );
 
@@ -2611,8 +2158,8 @@ static int execute_pipeline(
         int current_status;
 
         sys_waitpid(
-            pids[i],
-            &current_status,
+            pids[i], 
+            &current_status, 
             0
         );
 
@@ -2628,11 +2175,16 @@ static int execute_pipeline(
 
 int main(void)
 {
+    log_info("Aethel Bash ");
+    log_info(AEBASH_VERSION_STRING);
+    log_info("\n");
+    log_info("Type 'help' for help.\n");
+
     char buffer[128];
     char *argv[MAX_ARGUMENTS];
 
     load_profile(
-        profile,
+        profile, 
         sizeof(profile)
     );
 
@@ -2655,8 +2207,8 @@ int main(void)
         print_prompt();
 
         long count = sys_read(
-            0,
-            buffer,
+            0, 
+            buffer, 
             sizeof(buffer) - 1
         );
 
@@ -2677,7 +2229,7 @@ int main(void)
 
             char *separator =
                 find_command_separator(
-                    command,
+                    command, 
                     &separator_type
                 );
 
@@ -2689,8 +2241,8 @@ int main(void)
                     char *next_command = 0;
 
                     last_status = execute_pipeline(
-                        command,
-                        &pipeline_separator,
+                        command, 
+                        &pipeline_separator, 
                         &next_command
                     );
 
@@ -2714,8 +2266,8 @@ int main(void)
             }
 
             int argc = parse_command(
-                command,
-                argv,
+                command, 
+                argv, 
                 MAX_ARGUMENTS
             );
 
@@ -2732,8 +2284,8 @@ int main(void)
             for (int i = 0; i < argc; i++)
             {
                 expand_variables(
-                    argv[i],
-                    expanded[i],
+                    argv[i], 
+                    expanded[i], 
                     sizeof(expanded[i])
                 );
 
@@ -2741,9 +2293,9 @@ int main(void)
             }
 
             expand_wildcards(
-                argv,
-                &argc,
-                16,
+                argv, 
+                &argc, 
+                16, 
                 wildcard_allowed
             );
 
@@ -2766,7 +2318,7 @@ int main(void)
                 if (execute)
                 {
                     last_status = execute_command(
-                        argc,
+                        argc, 
                         argv
                     );
                 }
