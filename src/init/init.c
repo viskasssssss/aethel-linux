@@ -44,7 +44,7 @@ int main(void)
         if (pid == 0)
         {
             const char *argv[] = {
-                "/shell",
+                "/bash",
                 0
             };
 
@@ -53,7 +53,7 @@ int main(void)
             };
 
             sys_execve(
-                "/shell",
+                "/bash",
                 (char *const *)argv,
                 (char *const *)envp
             );

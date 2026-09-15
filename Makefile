@@ -19,6 +19,7 @@ CC = gcc
 LD = ld
 QEMU = qemu-system-x86_64
 
+SRC_DIR = src
 BUILD_DIR = build
 ROOTFS_DIR = rootfs
 KERNEL_DIR = kernel
@@ -26,15 +27,15 @@ KERNEL_DIR = kernel
 BIN_SOURCES := $(wildcard src/bin/*.c)
 BIN_PROGRAMS := $(patsubst src/bin/%.c,$(ROOTFS_DIR)/bin/%,$(BIN_SOURCES))
 
-CFLAGS = -nostdlib -ffreestanding -Isrc
+CFLAGS = -nostdlib -ffreestanding -I$(SRC_DIR) -I$(SRC_DIR)/util/
 
-.PHONY: all init shell log initramfs run clean
+.PHONY: all init bash log initramfs run clean
 
-all: init shell $(BIN_PROGRAMS) initramfs
+all: init bash $(BIN_PROGRAMS) initramfs
 
 init: $(ROOTFS_DIR)/init
 
-shell: $(ROOTFS_DIR)/shell
+bash: $(ROOTFS_DIR)/bash
 
 log: $(BUILD_DIR)/log.o
 
@@ -50,28 +51,28 @@ $(ROOTFS_DIR)/bin/%: src/bin/%.c \
 		$(BUILD_DIR)/$*.o \
 		-o $@
 
-$(BUILD_DIR)/log.o: src/log.c src/log.h src/syscall.h
+$(BUILD_DIR)/log.o: $(SRC_DIR)/util/log.c $(SRC_DIR)/util/log.h $(SRC_DIR)/util/syscall.h
 	$(CC) -c $(CFLAGS) $< -o $@
 
 $(ROOTFS_DIR)/init: $(BUILD_DIR)/start.o $(BUILD_DIR)/syscall.o $(BUILD_DIR)/log.o $(BUILD_DIR)/init.o
 	$(LD) $^ -o $@
 
-$(ROOTFS_DIR)/shell: $(BUILD_DIR)/start.o $(BUILD_DIR)/syscall.o $(BUILD_DIR)/log.o $(BUILD_DIR)/shell.o
+$(ROOTFS_DIR)/bash: $(BUILD_DIR)/start.o $(BUILD_DIR)/syscall.o $(BUILD_DIR)/log.o $(BUILD_DIR)/bash.o
 	$(LD) $^ -o $@
 
-$(BUILD_DIR)/start.o: src/start.S
+$(BUILD_DIR)/start.o: $(SRC_DIR)/asm/start.S
 	$(CC) -c -nostdlib $< -o $@
 
-$(BUILD_DIR)/syscall.o: src/syscall.c src/syscall.h
+$(BUILD_DIR)/syscall.o: $(SRC_DIR)/util/syscall.c $(SRC_DIR)/util/syscall.h
 	$(CC) -c $(CFLAGS) $< -o $@
 
-$(BUILD_DIR)/init.o: src/init.c src/syscall.h
+$(BUILD_DIR)/init.o: $(SRC_DIR)/init/init.c $(SRC_DIR)/util/syscall.h
 	$(CC) -c $(CFLAGS) $< -o $@
 
-$(BUILD_DIR)/shell.o: src/shell.c src/shell.h src/syscall.h
+$(BUILD_DIR)/bash.o: $(SRC_DIR)/bash/bash.c $(SRC_DIR)/bash/bash.h $(SRC_DIR)/util/syscall.h
 	$(CC) -c $(CFLAGS) $< -o $@
 
-initramfs: init shell $(BIN_PROGRAMS)
+initramfs: init bash $(BIN_PROGRAMS)
 	cd $(ROOTFS_DIR) && find . -mindepth 1 -print | cpio -o -H newc > ../$(BUILD_DIR)/initramfs.cpio
 
 run: all
@@ -84,4 +85,4 @@ clean:
 	rm -f $(BUILD_DIR)/*.o
 	rm -f $(BUILD_DIR)/initramfs.cpio
 	rm -f $(ROOTFS_DIR)/init
-	rm -f $(ROOTFS_DIR)/shell
+	rm -f $(ROOTFS_DIR)/bash

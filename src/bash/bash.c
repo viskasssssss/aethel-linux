@@ -18,7 +18,7 @@ along with Aethel. If not,  see <https://www.gnu.org/licenses/>.
 */
 
 #include "syscall.h"
-#include "shell.h"
+#include "bash.h"
 #include "log.h"
 
 #define TCGETS 0x5401
