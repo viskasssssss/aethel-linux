@@ -1,3 +1,5 @@
+![Aethel Logo](res/logo.png)
+
 # Aethel Linux
 
 Aethel Linux is a Linux distribution built from scratch, focused on learning, experimentation, and building a complete operating system environment from the ground up.
@@ -21,6 +23,8 @@ Aethel Linux aims to provide:
 The project is intentionally developed step by step rather than trying to build everything at once.
 
 ## Current Features
+
+![Screenshot](res/screenshot1.png)
 
 Aethel currently includes:
 

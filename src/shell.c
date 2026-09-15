@@ -32,6 +32,9 @@ along with Aethel. If not, see <https://www.gnu.org/licenses/>.
 
 #define DT_DIR 4
 
+#define MAX_ARGUMENTS 64
+#define MAX_ARGUMENT_LENGTH 256
+
 static char *path_value;
 
 static char profile[256];
@@ -46,6 +49,10 @@ static int environment_count = 0;
 
 static int last_status = 0;
 
+static char wildcard_storage[
+    MAX_ARGUMENTS
+][MAX_ARGUMENT_LENGTH];
+
 struct termios
 {
     unsigned int input_flags;
@@ -59,6 +66,17 @@ struct termios
 
     unsigned int input_speed;
     unsigned int output_speed;
+};
+
+struct linux_dirent64
+{
+    unsigned long inode;
+    long offset;
+
+    unsigned short record_length;
+    unsigned char type;
+
+    char name[];
 };
 
 static long string_length(
@@ -268,6 +286,750 @@ static int set_environment(
     return 0;
 }
 
+static int wildcard_match(
+    const char *pattern,
+    const char *name
+)
+{
+    while (*pattern != '\0')
+    {
+        if (*pattern == '*')
+        {
+            pattern++;
+
+            if (*pattern == '\0')
+            {
+                return 1;
+            }
+
+            while (*name != '\0')
+            {
+                if (wildcard_match(
+                        pattern,
+                        name))
+                {
+                    return 1;
+                }
+
+                name++;
+            }
+
+            return 0;
+        }
+
+        if (*pattern == '[')
+        {
+            pattern++;
+
+            int inverted = 0;
+
+            if (*pattern == '!')
+            {
+                inverted = 1;
+                pattern++;
+            }
+
+            int matched = 0;
+
+            while (*pattern != '\0' &&
+                *pattern != ']')
+            {
+                if (pattern[1] == '-' &&
+                    pattern[2] != '\0' &&
+                    pattern[2] != ']')
+                {
+                    if (*name >= pattern[0] &&
+                        *name <= pattern[2])
+                    {
+                        matched = 1;
+                    }
+
+                    pattern += 3;
+
+                    continue;
+                }
+
+                if (*pattern == *name)
+                {
+                    matched = 1;
+                }
+
+                pattern++;
+            }
+
+            if (*pattern == '\0')
+            {
+                return 0;
+            }
+
+            if (inverted)
+            {
+                if (matched)
+                {
+                    return 0;
+                }
+            }
+            else
+            {
+                if (!matched)
+                {
+                    return 0;
+                }
+            }
+
+            pattern++;
+            name++;
+
+            continue;
+        }
+
+        if (*pattern != '?' &&
+            *pattern != *name)
+        {
+            return 0;
+        }
+
+        pattern++;
+        name++;
+    }
+
+    return *name == '\0';
+}
+
+static int has_unquoted_wildcard(
+    const char *argument
+)
+{
+    char quote = 0;
+
+    for (long i = 0;
+         argument[i] != '\0';
+         i++)
+    {
+        char current = argument[i];
+
+        if (quote != 0)
+        {
+            if (current == quote)
+            {
+                quote = 0;
+            }
+
+            continue;
+        }
+
+        if (current == '"' ||
+            current == '\'')
+        {
+            quote = current;
+            continue;
+        }
+
+        if (current == '*' ||
+            current == '?' ||
+            current == '[')
+        {
+            return 1;
+        }
+    }
+
+    return 0;
+}
+
+static int expand_wildcard_path(
+    const char *pattern,
+    const char *prefix,
+    int *output_count,
+    int max_arguments
+)
+{
+    char component[256];
+    char remainder[256];
+
+    long pattern_length =
+        string_length(pattern);
+
+    long separator = -1;
+
+    for (long i = 0;
+         i < pattern_length;
+         i++)
+    {
+        if (pattern[i] == '/')
+        {
+            separator = i;
+            break;
+        }
+    }
+
+    if (separator < 0)
+    {
+        for (long i = 0;
+             i <= pattern_length;
+             i++)
+        {
+            component[i] = pattern[i];
+        }
+
+        remainder[0] = '\0';
+    }
+    else
+    {
+        for (long i = 0;
+             i < separator;
+             i++)
+        {
+            component[i] = pattern[i];
+        }
+
+        component[separator] = '\0';
+
+        long remainder_length =
+            pattern_length - separator - 1;
+
+        for (long i = 0;
+             i <= remainder_length;
+             i++)
+        {
+            remainder[i] =
+                pattern[separator + 1 + i];
+        }
+    }
+
+    int has_wildcard = 0;
+
+    for (long i = 0;
+         component[i] != '\0';
+         i++)
+    {
+        if (component[i] == '*' ||
+            component[i] == '?' ||
+            component[i] == '[')
+        {
+            has_wildcard = 1;
+            break;
+        }
+    }
+
+    char current_directory[256];
+
+    if (prefix[0] == '\0')
+    {
+        current_directory[0] = '.';
+        current_directory[1] = '\0';
+    }
+    else
+    {
+        long prefix_length =
+            string_length(prefix);
+
+        for (long i = 0;
+             i <= prefix_length;
+             i++)
+        {
+            current_directory[i] =
+                prefix[i];
+        }
+    }
+
+    if (!has_wildcard)
+    {
+        char next_prefix[256];
+
+        long prefix_length =
+            string_length(prefix);
+
+        long component_length =
+            string_length(component);
+
+        long position = 0;
+
+        for (long i = 0;
+             i < prefix_length;
+             i++)
+        {
+            next_prefix[position++] =
+                prefix[i];
+        }
+
+        if (position > 0 &&
+            next_prefix[position - 1] != '/')
+        {
+            next_prefix[position++] = '/';
+        }
+
+        for (long i = 0;
+             i <= component_length;
+             i++)
+        {
+            next_prefix[position++] =
+                component[i];
+        }
+
+        if (remainder[0] == '\0')
+        {
+            if (*output_count >= max_arguments)
+            {
+                return -1;
+            }
+
+            long length =
+                string_length(next_prefix);
+
+            if (length >= MAX_ARGUMENT_LENGTH)
+            {
+                return 0;
+            }
+
+            for (long i = 0;
+                 i <= length;
+                 i++)
+            {
+                wildcard_storage[
+                    *output_count
+                ][i] = next_prefix[i];
+            }
+
+            (*output_count)++;
+
+            return 1;
+        }
+
+        return expand_wildcard_path(
+            remainder,
+            next_prefix,
+            output_count,
+            max_arguments
+        );
+    }
+
+    long fd = sys_openat(
+        -100,
+        current_directory,
+        0,
+        0
+    );
+
+    if (fd < 0)
+    {
+        return 0;
+    }
+
+    int matches = 0;
+
+    char buffer[4096];
+
+    while (1)
+    {
+        long count = sys_getdents64(
+            fd,
+            buffer,
+            sizeof(buffer)
+        );
+
+        if (count <= 0)
+        {
+            break;
+        }
+
+        long offset = 0;
+
+        while (offset < count)
+        {
+            struct linux_dirent64 *entry =
+                (struct linux_dirent64 *)
+                (buffer + offset);
+
+            if (entry->name[0] == '.' &&
+                component[0] != '.')
+            {
+                offset += entry->record_length;
+                continue;
+            }
+
+            if (wildcard_match(
+                    component,
+                    entry->name))
+            {
+                char next_prefix[256];
+
+                long prefix_length =
+                    string_length(prefix);
+
+                long name_length =
+                    string_length(entry->name);
+
+                long position = 0;
+
+                for (long i = 0;
+                     i < prefix_length;
+                     i++)
+                {
+                    next_prefix[position++] =
+                        prefix[i];
+                }
+
+                if (position > 0 &&
+                    next_prefix[position - 1] != '/')
+                {
+                    next_prefix[position++] = '/';
+                }
+
+                for (long i = 0;
+                     i <= name_length;
+                     i++)
+                {
+                    next_prefix[position++] =
+                        entry->name[i];
+                }
+
+                if (position >=
+                    MAX_ARGUMENT_LENGTH)
+                {
+                    offset += entry->record_length;
+                    continue;
+                }
+
+                if (remainder[0] == '\0')
+                {
+                    if (*output_count >=
+                        max_arguments)
+                    {
+                        sys_close(fd);
+                        return -1;
+                    }
+
+                    for (long i = 0;
+                         i < position;
+                         i++)
+                    {
+                        wildcard_storage[
+                            *output_count
+                        ][i] = next_prefix[i];
+                    }
+
+                    wildcard_storage[
+                        *output_count
+                    ][position] = '\0';
+
+                    (*output_count)++;
+                    matches++;
+                }
+                else
+                {
+                    int result =
+                        expand_wildcard_path(
+                            remainder,
+                            next_prefix,
+                            output_count,
+                            max_arguments
+                        );
+
+                    if (result < 0)
+                    {
+                        sys_close(fd);
+                        return -1;
+                    }
+
+                    matches += result;
+                }
+            }
+
+            offset += entry->record_length;
+        }
+    }
+
+    sys_close(fd);
+
+    return matches;
+}
+
+static int expand_wildcard_pattern(
+    const char *pattern,
+    char **output,
+    int *output_count,
+    int max_arguments
+)
+{
+    char directory[256];
+    char wildcard[256];
+
+    long pattern_length =
+        string_length(pattern);
+
+    long separator = -1;
+
+    for (long i = pattern_length - 1;
+         i >= 0;
+         i--)
+    {
+        if (pattern[i] == '/')
+        {
+            separator = i;
+            break;
+        }
+    }
+
+    if (separator < 0)
+    {
+        directory[0] = '.';
+        directory[1] = '\0';
+
+        for (long i = 0;
+             i <= pattern_length;
+             i++)
+        {
+            wildcard[i] = pattern[i];
+        }
+    }
+    else
+    {
+        if (separator == 0)
+        {
+            directory[0] = '/';
+            directory[1] = '\0';
+        }
+        else
+        {
+            for (long i = 0;
+                 i < separator;
+                 i++)
+            {
+                directory[i] = pattern[i];
+            }
+
+            directory[separator] = '\0';
+        }
+
+        long wildcard_length =
+            pattern_length - separator - 1;
+
+        for (long i = 0;
+             i <= wildcard_length;
+             i++)
+        {
+            wildcard[i] =
+                pattern[separator + 1 + i];
+        }
+    }
+
+    long fd = sys_openat(
+        -100,
+        directory,
+        0,
+        0
+    );
+
+    if (fd < 0)
+    {
+        return 0;
+    }
+
+    int matches = 0;
+
+    char buffer[4096];
+
+    while (1)
+    {
+        long count = sys_getdents64(
+            fd,
+            buffer,
+            sizeof(buffer)
+        );
+
+        if (count <= 0)
+        {
+            break;
+        }
+
+        long offset = 0;
+
+        while (offset < count)
+        {
+            struct linux_dirent64 *entry =
+                (struct linux_dirent64 *)
+                (buffer + offset);
+
+            if (entry->name[0] == '.' &&
+                wildcard[0] != '.')
+            {
+                offset += entry->record_length;
+                continue;
+            }
+
+            if (wildcard_match(
+                    wildcard,
+                    entry->name))
+            {
+                if (*output_count >= max_arguments)
+                {
+                    sys_close(fd);
+                    return -1;
+                }
+
+                long name_length =
+                    string_length(entry->name);
+
+                long directory_length =
+                    string_length(directory);
+
+                long result_length;
+
+                if (directory_length == 1 &&
+                    directory[0] == '.')
+                {
+                    result_length =
+                        name_length;
+                }
+                else
+                {
+                    result_length =
+                        directory_length +
+                        1 +
+                        name_length;
+                }
+
+                if (result_length >=
+                    MAX_ARGUMENT_LENGTH)
+                {
+                    offset += entry->record_length;
+                    continue;
+                }
+
+                if (directory_length == 1 &&
+                    directory[0] == '.')
+                {
+                    for (long i = 0;
+                         i <= name_length;
+                         i++)
+                    {
+                        wildcard_storage[
+                            *output_count
+                        ][i] =
+                            entry->name[i];
+                    }
+                }
+                else
+                {
+                    long position = 0;
+
+                    for (long i = 0;
+                         i < directory_length;
+                         i++)
+                    {
+                        wildcard_storage[
+                            *output_count
+                        ][position++] =
+                            directory[i];
+                    }
+
+                    wildcard_storage[
+                        *output_count
+                    ][position++] = '/';
+
+                    for (long i = 0;
+                         i <= name_length;
+                         i++)
+                    {
+                        wildcard_storage[
+                            *output_count
+                        ][position++] =
+                            entry->name[i];
+                    }
+                }
+
+                output[*output_count] =
+                    wildcard_storage[*output_count];
+
+                (*output_count)++;
+                matches++;
+            }
+
+            offset += entry->record_length;
+        }
+    }
+
+    sys_close(fd);
+
+    return matches;
+}
+
+static int expand_wildcards(
+    char **argv,
+    int *argc,
+    int max_arguments,
+    int *wildcard_allowed
+)
+{
+    char *original[MAX_ARGUMENTS];
+
+    int original_count = *argc;
+
+    for (int i = 0;
+         i < original_count;
+         i++)
+    {
+        original[i] = argv[i];
+    }
+
+    int new_count = 0;
+
+    for (int i = 0;
+         i < original_count;
+         i++)
+    {
+        char *argument = original[i];
+
+        if (!wildcard_allowed[i])
+        {
+            if (new_count >= max_arguments)
+            {
+                return 1;
+            }
+
+            argv[new_count++] = argument;
+
+            continue;
+        }
+
+        int old_count = new_count;
+
+        int result =
+            expand_wildcard_path(
+                argument,
+                "",
+                &new_count,
+                max_arguments
+            );
+
+        if (result == 0)
+        {
+            if (new_count >= max_arguments)
+            {
+                return 1;
+            }
+
+            argv[new_count++] = argument;
+        }
+        else
+        {
+            for (int j = old_count;
+                j < new_count;
+                j++)
+            {
+                argv[j] =
+                    wildcard_storage[j];
+            }
+        }
+    }
+
+    *argc = new_count;
+
+    argv[new_count] = 0;
+
+    return 0;
+}
+
 // BASIC
 
 static int command_help(
@@ -332,17 +1094,6 @@ static int command_exit(
 }
 
 // FILE SYSTEM
-
-struct linux_dirent64
-{
-    unsigned long inode;
-    long offset;
-
-    unsigned short record_length;
-    unsigned char type;
-
-    char name[];
-};
 
 static int command_ls(
     int argc,
@@ -543,28 +1294,22 @@ static int command_touch(
     char **argv
 )
 {
-    if (argc < 2)
+    for (int i = 1; i < argc; i++)
     {
-        log_error("touch: missing operand\n");
+        int fd = sys_openat(
+            -100,
+            argv[i],
+            64,
+            0644
+        );
 
-        return 1;
+        if (fd < 0)
+        {
+            return 1;
+        }
+
+        sys_close(fd);
     }
-
-    int fd = sys_openat(
-        -100,
-        argv[1],
-        64,
-        0644
-    );
-
-    if (fd < 0)
-    {
-        log_error("touch: cannot create file\n");
-
-        return 1;
-    }
-
-    sys_close(fd);
 
     return 0;
 }
@@ -852,7 +1597,7 @@ static command commands[] =
         "touch",
         command_touch,
         1,
-        1
+        MAX_ARGUMENTS
     },
 
     {
@@ -1326,8 +2071,10 @@ static void print_prompt(void)
         return;
     }
 
+    path[count] = '\0';
+
     log_info(path);
-    log_info("> ");
+    log_write("> ");
 }
 
 static int execute_external(
@@ -1694,7 +2441,7 @@ static int execute_pipeline(
     *separator = COMMAND_SEPARATOR_NONE;
     *next_command = 0;
 
-    char *argv[16];
+    char *argv[MAX_ARGUMENTS];
 
     int input = -1;
 
@@ -1722,7 +2469,7 @@ static int execute_pipeline(
         int argc = parse_command(
             command,
             argv,
-            16
+            MAX_ARGUMENTS
         );
 
         if (argc == 0)
@@ -1735,7 +2482,17 @@ static int execute_pipeline(
             return 1;
         }
 
-        char expanded[16][256];
+        int wildcard_allowed[MAX_ARGUMENTS];
+
+        for (int i = 0; i < argc; i++)
+        {
+            wildcard_allowed[i] =
+                has_unquoted_wildcard(argv[i]);
+        }
+
+        char expanded[
+            MAX_ARGUMENTS
+        ][MAX_ARGUMENT_LENGTH];
 
         for (int i = 0; i < argc; i++)
         {
@@ -1747,6 +2504,13 @@ static int execute_pipeline(
 
             argv[i] = expanded[i];
         }
+
+        expand_wildcards(
+            argv,
+            &argc,
+            MAX_ARGUMENTS,
+            wildcard_allowed
+        );
 
         int output = -1;
         int pipefd[2];
@@ -1865,7 +2629,7 @@ static int execute_pipeline(
 int main(void)
 {
     char buffer[128];
-    char *argv[16];
+    char *argv[MAX_ARGUMENTS];
 
     load_profile(
         profile,
@@ -1952,10 +2716,18 @@ int main(void)
             int argc = parse_command(
                 command,
                 argv,
-                16
+                MAX_ARGUMENTS
             );
 
             char expanded[16][256];
+
+            int wildcard_allowed[MAX_ARGUMENTS];
+
+            for (int i = 0; i < argc; i++)
+            {
+                wildcard_allowed[i] =
+                    has_unquoted_wildcard(argv[i]);
+            }
 
             for (int i = 0; i < argc; i++)
             {
@@ -1967,6 +2739,13 @@ int main(void)
 
                 argv[i] = expanded[i];
             }
+
+            expand_wildcards(
+                argv,
+                &argc,
+                16,
+                wildcard_allowed
+            );
 
             if (argc > 0)
             {
