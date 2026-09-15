@@ -29,15 +29,17 @@ along with Aethel. If not, see <https://www.gnu.org/licenses/>.
 #define VMIN 6
 #define VTIME 5
 
-static char profile[256];
 static char *path_value;
 
+static char profile[256];
+
+static char environment_storage[32][256];
+
 static char *environment[32] = {
-    profile,
     0
 };
 
-static int environment_count = 1;
+static int environment_count = 0;
 
 struct termios
 {
@@ -196,6 +198,69 @@ static int environment_name_equals(
     }
 
     return environment[i] == '=';
+}
+
+static int set_environment(
+    const char *value
+)
+{
+    long equals = -1;
+
+    for (long i = 0; value[i] != '\0'; i++)
+    {
+        if (value[i] == '=')
+        {
+            equals = i;
+            break;
+        }
+    }
+
+    if (equals <= 0)
+        return -1;
+
+    long length = string_length(value);
+
+    if (length >= 256)
+        return -1;
+
+    for (int i = 0; i < environment_count; i++)
+    {
+        int same_name = 1;
+
+        for (long j = 0; j < equals; j++)
+        {
+            if (environment[i][j] != value[j])
+            {
+                same_name = 0;
+                break;
+            }
+        }
+
+        if (same_name && environment[i][equals] == '=')
+        {
+            for (long j = 0; j <= length; j++)
+            {
+                environment_storage[i][j] = value[j];
+            }
+
+            return 0;
+        }
+    }
+
+    if (environment_count >= 32)
+        return -1;
+
+    for (long i = 0; i <= length; i++)
+    {
+        environment_storage[environment_count][i] = value[i];
+    }
+
+    environment[environment_count] =
+        environment_storage[environment_count];
+
+    environment_count++;
+
+    return 0;
 }
 
 // BASIC
@@ -764,6 +829,69 @@ static int command_env(
     return 0;
 }
 
+static int command_export(
+    int argc,
+    char **argv
+)
+{
+    for (int i = 1; i < argc; i++)
+    {
+        if (set_environment(argv[i]) < 0)
+        {
+            sys_write(
+                1,
+                "export: invalid variable\n",
+                27
+            );
+
+            return 1;
+        }
+    }
+
+    return 0;
+}
+
+static int command_unset(
+    int argc,
+    char **argv
+)
+{
+    for (int i = 1; i < argc; i++)
+    {
+        for (int j = 0; j < environment_count; j++)
+        {
+            if (!environment_name_equals(
+                    environment[j],
+                    argv[i]))
+            {
+                continue;
+            }
+
+            for (int k = j;
+                 k < environment_count - 1;
+                 k++)
+            {
+                for (long l = 0; l < 256; l++)
+                {
+                    environment_storage[k][l] =
+                        environment_storage[k + 1][l];
+                }
+
+                environment[k] =
+                    environment_storage[k];
+            }
+
+            environment_count--;
+
+            environment[environment_count] = 0;
+
+            break;
+        }
+    }
+
+    return 0;
+}
+
 static command commands[] =
 {
     {
@@ -858,6 +986,20 @@ static command commands[] =
     },
 
     {
+        "export",
+        command_export,
+        1,
+        -1
+    },
+
+    {
+        "unset",
+        command_unset,
+        1,
+        -1
+    },
+
+    {
         "exit",
         command_exit,
         0,
@@ -871,36 +1013,90 @@ static int command_count =
 
 
 static int parse_command(
-    char *buffer,
+    char *input,
     char **argv,
     int max_arguments
 )
 {
     int argc = 0;
-    int inside_argument = 0;
 
-    for (long i = 0; buffer[i] != '\0'; i++)
+    while (*input != '\0')
     {
-        if (buffer[i] == ' ' ||
-            buffer[i] == '\n' ||
-            buffer[i] == '\t')
+        while (*input == ' ' ||
+               *input == '\t' ||
+               *input == '\n')
         {
-            buffer[i] = '\0';
-            inside_argument = 0;
-            continue;
+            input++;
         }
 
-        if (!inside_argument)
+        if (*input == '\0')
+            break;
+
+        if (argc >= max_arguments)
+            break;
+
+        argv[argc++] = input;
+
+        int in_quotes = 0;
+        char quote = 0;
+
+        char *read = input;
+        char *write = input;
+
+        while (*read != '\0')
         {
-            if (argc >= max_arguments)
+            if (in_quotes)
+            {
+                if (*read == quote)
+                {
+                    in_quotes = 0;
+                    read++;
+                    continue;
+                }
+
+                *write = *read;
+                write++;
+                read++;
+
+                continue;
+            }
+
+            if (*read == '"' ||
+                *read == '\'')
+            {
+                in_quotes = 1;
+                quote = *read;
+                read++;
+
+                continue;
+            }
+
+            if (*read == ' ' ||
+                *read == '\t' ||
+                *read == '\n')
+            {
+                read++;
                 break;
+            }
 
-            argv[argc] = &buffer[i];
-            argc++;
-
-            inside_argument = 1;
+            *write = *read;
+            write++;
+            read++;
         }
+
+        *write = '\0';
+
+        while (*read == ' ' ||
+               *read == '\t' ||
+               *read == '\n')
+        {
+            read++;
+        }
+
+        input = read;
     }
+
+    argv[argc] = 0;
 
     return argc;
 }
@@ -913,6 +1109,86 @@ static int is_append_redirection(
         operator,
         ">>"
     );
+}
+
+static void expand_variables(
+    char *argument,
+    char *output,
+    long output_size
+)
+{
+    long input_index = 0;
+    long output_index = 0;
+
+    while (argument[input_index] != '\0' &&
+           output_index < output_size - 1)
+    {
+        if (argument[input_index] != '$')
+        {
+            output[output_index++] =
+                argument[input_index++];
+
+            continue;
+        }
+
+        input_index++;
+
+        char name[64];
+        long name_length = 0;
+
+        while (argument[input_index] != '\0' &&
+               ((argument[input_index] >= 'a' &&
+                 argument[input_index] <= 'z') ||
+                (argument[input_index] >= 'A' &&
+                 argument[input_index] <= 'Z') ||
+                (argument[input_index] >= '0' &&
+                 argument[input_index] <= '9') ||
+                argument[input_index] == '_'))
+        {
+            if (name_length < 63)
+            {
+                name[name_length++] =
+                    argument[input_index];
+            }
+
+            input_index++;
+        }
+
+        name[name_length] = '\0';
+
+        int found = 0;
+
+        for (int i = 0; i < environment_count; i++)
+        {
+            if (environment_name_equals(
+                    environment[i],
+                    name))
+            {
+                long value_start =
+                    name_length + 1;
+
+                long value_length =
+                    string_length(environment[i]) -
+                    value_start;
+
+                for (long j = 0;
+                     j < value_length &&
+                     output_index < output_size - 1;
+                     j++)
+                {
+                    output[output_index++] =
+                        environment[i][value_start + j];
+                }
+
+                found = 1;
+                break;
+            }
+        }
+
+        (void)found;
+    }
+
+    output[output_index] = '\0';
 }
 
 static int find_redirection(
@@ -1236,6 +1512,8 @@ static int execute_command(
             output,
             1
         );
+
+        argv[redirection] = 0;
     }
 
     int result = 0;
@@ -1243,14 +1521,14 @@ static int execute_command(
     if (external)
     {
         result = execute_external(
-            argc,
+            command_argc,
             argv
         );
     }
     else
     {
         result = commands[command_index].function(
-            argc,
+            command_argc,
             argv
         );
     }
@@ -1279,6 +1557,16 @@ int main(void)
         sizeof(profile)
     );
 
+    long profile_length = string_length(profile);
+
+    for (long i = 0; i <= profile_length; i++)
+    {
+        environment_storage[0][i] = profile[i];
+    }
+
+    environment[0] = environment_storage[0];
+    environment_count = 1;
+
     path_value = get_path_value(profile);
 
     char *current = path_value;
@@ -1303,6 +1591,19 @@ int main(void)
             argv,
             16
         );
+
+        char expanded[16][256];
+
+        for (int i = 0; i < argc; i++)
+        {
+            expand_variables(
+                argv[i],
+                expanded[i],
+                sizeof(expanded[i])
+            );
+
+            argv[i] = expanded[i];
+        }
 
         if (argc == 0)
             continue;
