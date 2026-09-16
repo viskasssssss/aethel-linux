@@ -17,6 +17,7 @@ You should have received a copy of the GNU General Public License
 along with Aethel. If not, see <https://www.gnu.org/licenses/>.
 */
 
+#include "deflate.h"
 #include "huffman.h"
 #include "log.h"
 
@@ -197,41 +198,454 @@ int main(
         log_info("Codes: INVALID\n");
     }
 
-    //log_info(
-    //    "\nLiteral/length codes:\n"
-    //);
+    unsigned char test_literal_lengths[286] = {0};
+    unsigned char test_distance_lengths[30] = {0};
 
-    //for (int i = 0; i < 286; i++)
-    //{
-    //    if (literal_lengths[i] == 0)
-    //    {
-    //        continue;
-    //    }
+    test_literal_lengths[0] = 5;
+    test_literal_lengths[1] = 5;
+    test_literal_lengths[2] = 5;
+    test_literal_lengths[3] = 5;
+    test_literal_lengths[4] = 7;
 
-    //    log_number(
-    //        literal_codes[i].symbol
-    //    );
+    struct deflate_code_length_symbol
+        symbols[316];
 
-    //    log_info(
-    //        ": length="
-    //    );
+    int symbol_count;
 
-    //    log_number(
-    //        literal_codes[i].length
-    //    );
+    int literal_count =
+        deflate_get_literal_count(test_literal_lengths);
 
-    //    log_info(
-    //        " code="
-    //    );
+    int distance_count =
+        deflate_get_distance_count(test_distance_lengths);
 
-    //    log_number(
-    //        literal_codes[i].code
-    //    );
+    if (!deflate_encode_code_lengths(
+        test_literal_lengths,
+        test_distance_lengths,
+        literal_count,
+        distance_count,
+        symbols,
+        &symbol_count
+    ))
+    {
+        return 1;
+    }
 
-    //    log_info(
-    //        "\n"
-    //    );
-    //}
+    log_info(
+        "\nCode length RLE:\n"
+    );
+
+    for (int i = 0; i < symbol_count; i++)
+    {
+        log_info("symbol=");
+
+        log_number(symbols[i].symbol);
+
+        log_info(" extra=");
+
+        log_number(symbols[i].extra);
+
+        log_info(" extra_bits=");
+
+        log_number(symbols[i].extra_bits);
+
+        log_info("\n");
+    }
+
+    unsigned long code_length_frequencies[19];
+
+    if (!deflate_build_code_length_frequencies(
+        symbols,
+        symbol_count,
+        code_length_frequencies
+    ))
+    {
+        return 1;
+    }
+
+    log_info("\nCode length frequencies:\n");
+
+    for (int i = 0; i < 19; i++)
+    {
+        log_info("symbol=");
+        log_number(i);
+        log_info(" frequency=");
+        log_number(code_length_frequencies[i]);
+        log_info("\n");
+    }
+
+    unsigned char code_length_lengths[19];
+    int code_length_count = 19;
+
+    if (!huffman_build_lengths(
+        code_length_frequencies,
+        code_length_lengths,
+        code_length_count
+    ))
+    {
+        return 1;
+    }
+
+    int max_code_length = 0;
+
+    for (int i = 0; i < code_length_count; i++)
+    {
+        if (code_length_lengths[i] > max_code_length)
+            max_code_length = code_length_lengths[i];
+    }
+
+    log_info("\nCode length Huffman:\n");
+
+    log_info("Max length before: ");
+    log_number(max_code_length);
+    log_info("\n");
+
+    int max_length = 7;
+
+    if (!huffman_limit_lengths(
+        code_length_lengths,
+        code_length_frequencies,
+        code_length_count,
+        max_length
+    ))
+    {
+        return 1;
+    }
+
+    max_code_length = 0;
+
+    for (int i = 0; i < code_length_count; i++)
+    {
+        if (code_length_lengths[i] > max_code_length)
+            max_code_length = code_length_lengths[i];
+    }
+
+    log_info("Max length after: ");
+    log_number(max_code_length);
+    log_info("\n");
+
+    struct huffman_code code_length_codes[19];
+
+    if (!huffman_build(
+        code_length_codes,
+        code_length_lengths,
+        code_length_count
+    ))
+    {
+        return 1;
+    }
+
+    for (int i = 0; i < 19; i++)
+    {
+        if (code_length_lengths[i] == 0)
+            continue;
+
+        log_info("symbol=");
+        log_number(i);
+        log_info(" length=");
+        log_number(code_length_lengths[i]);
+        log_info(" code=");
+        log_number(code_length_codes[i].code);
+        log_info("\n");
+    }
+
+    code_length_count =
+    deflate_get_code_length_count(code_length_lengths);
+
+    log_info("Code length count: ");
+    log_number(code_length_count);
+    log_info("\n");
+
+    int hclen = code_length_count - 4;
+
+    log_info("HCLEN: ");
+    log_number(hclen);
+    log_info("\n");
+
+    log_info("\nDynamic counts:\n");
+
+    log_info("Literal count: ");
+    log_number(literal_count);
+    log_info("\n");
+
+    log_info("Distance count: ");
+    log_number(distance_count);
+    log_info("\n");
+
+    log_info("HLIT: ");
+    log_number(literal_count - 257);
+    log_info("\n");
+
+    log_info("HDIST: ");
+    log_number(distance_count - 1);
+    log_info("\n");
+
+    int fd = sys_openat(
+        -100,
+        "/tmp/dynamic-header",
+        O_WRONLY | O_CREAT | O_TRUNC,
+        0644
+    );
+
+    if (fd < 0)
+        return 1;
+
+    struct bit_writer writer;
+
+    bit_writer_init(
+        &writer,
+        fd
+    );
+
+    if (!deflate_write_dynamic_header(
+        &writer,
+        test_literal_lengths,
+        test_distance_lengths,
+        code_length_lengths,
+        code_length_codes,
+        symbols,
+        symbol_count
+    ))
+    {
+        sys_close(fd);
+        return 1;
+    }
+
+    if (!bit_writer_flush(&writer))
+    {
+        sys_close(fd);
+        return 1;
+    }
+
+    sys_close(fd);
+
+    fd = sys_openat(
+        -100,
+        "/tmp/dynamic-header",
+        O_RDONLY,
+        0
+    );
+
+    if (fd < 0)
+        return 1;
+
+    struct bit_reader reader;
+
+    bit_reader_init(
+        &reader,
+        fd
+    );
+
+    int count = 5;
+
+    unsigned long hlit =
+        bit_read_bits(
+            &reader,
+            count
+        );
+
+    count = 5;
+
+    unsigned long hdist =
+        bit_read_bits(
+            &reader,
+            count
+        );
+
+    count = 4;
+
+    unsigned long read_hclen =
+        bit_read_bits(
+            &reader,
+            count
+        );
+
+    log_info("\nRead Dynamic Header:\n");
+
+    log_info("HLIT: ");
+    log_number(hlit);
+    log_info("\n");
+
+    log_info("HDIST: ");
+    log_number(hdist);
+    log_info("\n");
+
+    log_info("HCLEN: ");
+    log_number(read_hclen);
+    log_info("\n");
+
+    static const int order[19] =
+    {
+        16, 17, 18,
+        0, 8, 7, 9,
+        6, 10, 5, 11,
+        4, 12, 3, 13,
+        2, 14, 1, 15
+    };
+
+    log_info("\nRead Code Length Lengths:\n");
+
+    for (int i = 0; i < (int)read_hclen + 4; i++)
+    {
+        unsigned long length =
+            bit_read_bits(
+                &reader,
+                3
+            );
+
+        log_info("symbol=");
+        log_number(order[i]);
+
+        log_info(" length=");
+        log_number(length);
+
+        log_info("\n");
+    }
+
+    log_info("\nRead Code Length RLE:\n");
+
+    unsigned char decoded_lengths[286 + 30] = {0};
+    int decoded_count = 0;
+
+    while (decoded_count < literal_count + distance_count)
+    {
+        int count = 0;
+
+        int symbol =
+            huffman_decode(
+                &reader,
+                code_length_codes,
+                19
+            );
+
+        if (symbol < 0)
+        {
+            sys_close(fd);
+            return 1;
+        }
+
+        log_info("symbol=");
+        log_number(symbol);
+
+        if (symbol <= 15)
+        {
+            decoded_lengths[decoded_count++] =
+                symbol;
+
+            log_info("\n");
+        }
+        else if (symbol == 16)
+        {
+            count = 2;
+
+            unsigned long extra =
+                bit_read_bits(
+                    &reader,
+                    count
+                );
+
+            int repeat = extra + 3;
+
+            if (decoded_count == 0)
+            {
+                sys_close(fd);
+                return 1;
+            }
+
+            unsigned char length =
+                decoded_lengths[decoded_count - 1];
+
+            for (int i = 0; i < repeat; i++)
+            {
+                decoded_lengths[decoded_count++] =
+                    length;
+            }
+
+            log_info(" repeat=");
+            log_number(repeat);
+            log_info("\n");
+        }
+        else if (symbol == 17)
+        {
+            count = 3;
+
+            unsigned long extra =
+                bit_read_bits(
+                    &reader,
+                    count
+                );
+
+            int repeat = extra + 3;
+
+            for (int i = 0; i < repeat; i++)
+            {
+                decoded_lengths[decoded_count++] = 0;
+            }
+
+            log_info(" repeat=");
+            log_number(repeat);
+            log_info("\n");
+        }
+        else if (symbol == 18)
+        {
+            count = 7;
+
+            unsigned long extra =
+                bit_read_bits(
+                    &reader,
+                    count
+                );
+
+            int repeat = extra + 11;
+
+            for (int i = 0; i < repeat; i++)
+            {
+                decoded_lengths[decoded_count++] = 0;
+            }
+
+            log_info(" repeat=");
+            log_number(repeat);
+            log_info("\n");
+        }
+        else
+        {
+            sys_close(fd);
+            return 1;
+        }
+    }
+
+    int valid_lengths = 1;
+
+    for (int i = 0; i < literal_count; i++)
+    {
+        if (decoded_lengths[i] !=
+            test_literal_lengths[i])
+        {
+            valid_lengths = 0;
+            break;
+        }
+    }
+
+    for (int i = 0; i < distance_count; i++)
+    {
+        if (decoded_lengths[literal_count + i] !=
+            test_distance_lengths[i])
+        {
+            valid_lengths = 0;
+            break;
+        }
+    }
+
+    if (valid_lengths &&
+        decoded_count == literal_count + distance_count)
+    {
+        log_info("RLE lengths: valid\n");
+    }
+    else
+    {
+        log_info("RLE lengths: INVALID\n");
+    }
+
+    sys_close(fd);
 
     return 0;
 }

@@ -311,6 +311,31 @@ static int deflate_write_match(
     return 1;
 }
 
+static void deflate_count_code_length(
+    unsigned long *frequencies,
+    int symbol
+)
+{
+    frequencies[symbol]++;
+}
+
+static int deflate_add_code_length_symbol(
+    struct deflate_code_length_symbol *symbols,
+    int *symbol_count,
+    int symbol,
+    int extra,
+    int extra_bits
+)
+{
+    symbols[*symbol_count].symbol = symbol;
+    symbols[*symbol_count].extra = extra;
+    symbols[*symbol_count].extra_bits = extra_bits;
+
+    (*symbol_count)++;
+
+    return 0;
+}
+
 
 int deflate_read_block_header(
     struct bit_reader *reader,
@@ -849,6 +874,363 @@ int deflate_build_frequencies(
      * End Of Block
      */
     literal_frequencies[256]++;
+
+    return 1;
+}
+
+int deflate_encode_code_lengths(
+    const unsigned char *literal_lengths,
+    const unsigned char *distance_lengths,
+    int literal_count,
+    int distance_count,
+    struct deflate_code_length_symbol *symbols,
+    int *symbol_count
+)
+{
+    unsigned char lengths[286 + 30];
+
+    int count = 0;
+    int i = 0;
+
+    for (int j = 0; j < literal_count; j++)
+        lengths[count++] = literal_lengths[j];
+
+    for (int j = 0; j < distance_count; j++)
+        lengths[count++] = distance_lengths[j];
+
+    *symbol_count = 0;
+
+    while (i < count)
+    {
+        int length = lengths[i];
+        int run_length = 1;
+
+        while (i + run_length < count &&
+               lengths[i + run_length] == length)
+        {
+            run_length++;
+        }
+
+        int run = run_length;
+
+        if (length == 0)
+        {
+            while (run >= 11)
+            {
+                int repeat = run > 138 ? 138 : run;
+
+                deflate_add_code_length_symbol(
+                    symbols,
+                    symbol_count,
+                    18,
+                    repeat - 11,
+                    7
+                );
+
+                run -= repeat;
+            }
+
+            if (run >= 3)
+            {
+                int repeat = run > 10 ? 10 : run;
+
+                deflate_add_code_length_symbol(
+                    symbols,
+                    symbol_count,
+                    17,
+                    repeat - 3,
+                    3
+                );
+
+                run -= repeat;
+            }
+
+            while (run > 0)
+            {
+                deflate_add_code_length_symbol(
+                    symbols,
+                    symbol_count,
+                    0,
+                    0,
+                    0
+                );
+
+                run--;
+            }
+        }
+        else
+        {
+            deflate_add_code_length_symbol(
+                symbols,
+                symbol_count,
+                length,
+                0,
+                0
+            );
+
+            run--;
+
+            while (run >= 3)
+            {
+                int repeat = run > 6 ? 6 : run;
+
+                deflate_add_code_length_symbol(
+                    symbols,
+                    symbol_count,
+                    16,
+                    repeat - 3,
+                    2
+                );
+
+                run -= repeat;
+            }
+
+            while (run > 0)
+            {
+                deflate_add_code_length_symbol(
+                    symbols,
+                    symbol_count,
+                    length,
+                    0,
+                    0
+                );
+
+                run--;
+            }
+        }
+
+        i += run_length;
+    }
+
+    return 1;
+}
+
+int deflate_build_code_length_frequencies(
+    const struct deflate_code_length_symbol *symbols,
+    int symbol_count,
+    unsigned long *frequencies
+)
+{
+    for (int i = 0; i < 19; i++)
+        frequencies[i] = 0;
+
+    for (int i = 0; i < symbol_count; i++)
+        frequencies[symbols[i].symbol]++;
+
+    return 1;
+}
+
+int deflate_get_code_length_count(
+    const unsigned char *lengths
+)
+{
+    static const int order[19] =
+    {
+        16, 17, 18,
+        0, 8, 7, 9,
+        6, 10, 5, 11,
+        4, 12, 3, 13,
+        2, 14, 1, 15
+    };
+
+    int count = 4;
+
+    for (int i = 18; i >= 0; i--)
+    {
+        if (lengths[order[i]] != 0)
+        {
+            count = i + 1;
+            break;
+        }
+    }
+
+    return count;
+}
+
+int deflate_write_code_length_lengths(
+    struct bit_writer *writer,
+    const unsigned char *lengths,
+    int count
+)
+{
+    static const int order[19] =
+    {
+        16, 17, 18,
+        0, 8, 7, 9,
+        6, 10, 5, 11,
+        4, 12, 3, 13,
+        2, 14, 1, 15
+    };
+
+    for (int i = 0; i < count; i++)
+    {
+        int symbol = order[i];
+
+        if (!bit_write(
+            writer,
+            lengths[symbol],
+            3
+        ))
+        {
+            return 0;
+        }
+    }
+
+    return 1;
+}
+
+int deflate_write_code_length_symbols(
+    struct bit_writer *writer,
+    const struct deflate_code_length_symbol *symbols,
+    int symbol_count,
+    const struct huffman_code *codes
+)
+{
+    for (int i = 0; i < symbol_count; i++)
+    {
+        int symbol = symbols[i].symbol;
+
+        if (!bit_write(
+            writer,
+            codes[symbol].code,
+            codes[symbol].length
+        ))
+        {
+            return 0;
+        }
+
+        if (symbols[i].extra_bits > 0)
+        {
+            if (!bit_write(
+                writer,
+                symbols[i].extra,
+                symbols[i].extra_bits
+            ))
+            {
+                return 0;
+            }
+        }
+    }
+
+    return 1;
+}
+
+int deflate_get_literal_count(
+    const unsigned char *lengths
+)
+{
+    int count = 286;
+
+    while (count > 257 &&
+           lengths[count - 1] == 0)
+    {
+        count--;
+    }
+
+    return count;
+}
+
+int deflate_get_distance_count(
+    const unsigned char *lengths
+)
+{
+    int count = 30;
+
+    while (count > 1 &&
+           lengths[count - 1] == 0)
+    {
+        count--;
+    }
+
+    return count;
+}
+
+int deflate_write_dynamic_header(
+    struct bit_writer *writer,
+    const unsigned char *literal_lengths,
+    const unsigned char *distance_lengths,
+    const unsigned char *code_length_lengths,
+    const struct huffman_code *code_length_codes,
+    const struct deflate_code_length_symbol *symbols,
+    int symbol_count
+)
+{
+    int literal_count =
+        deflate_get_literal_count(
+            literal_lengths
+        );
+
+    int distance_count =
+        deflate_get_distance_count(
+            distance_lengths
+        );
+
+    int code_length_count =
+        deflate_get_code_length_count(
+            code_length_lengths
+        );
+
+    unsigned long value;
+    int count;
+
+    /*
+     * HLIT
+     */
+
+    value = literal_count - 257;
+    count = 5;
+
+    if (!bit_write(
+        writer,
+        literal_count - 257,
+        5
+    ))
+        return 0;
+
+    /*
+     * HDIST
+     */
+
+    if (!bit_write(
+        writer,
+        distance_count - 1,
+        5
+    ))
+        return 0;
+
+    /*
+     * HCLEN
+     */
+
+    if (!bit_write(
+        writer,
+        code_length_count - 4,
+        4
+    ))
+        return 0;
+
+    /*
+     * Code length code lengths
+     */
+
+    if (!deflate_write_code_length_lengths(
+        writer,
+        code_length_lengths,
+        code_length_count
+    ))
+        return 0;
+
+    /*
+     * RLE encoded lengths
+     */
+
+    if (!deflate_write_code_length_symbols(
+        writer,
+        symbols,
+        symbol_count,
+        code_length_codes
+    ))
+        return 0;
 
     return 1;
 }
