@@ -2,60 +2,105 @@
 
 # Aethel Linux
 
-Aethel Linux is a Linux distribution built from scratch, focused on learning, experimentation, and building a complete operating system environment from the ground up.
+**A Linux distribution built from scratch.**
 
-The project starts with a minimal custom userspace and gradually grows towards a usable Linux distribution with its own tools, package manager, graphical environment, and ecosystem.
+Aethel Linux is an experimental Linux distribution focused on building a complete operating system environment from the ground up.
+
+Instead of relying on an existing userspace, Aethel is built around its own shell, system utilities, userspace components, archive tools, package manager, and eventually its own graphical environment.
 
 > **Status: Early development**
 
-## Goals
+## Philosophy
 
-Aethel Linux aims to provide:
+Aethel is built step by step.
 
-* A custom userspace built from the ground up
-* A custom shell and system utilities
-* A simple and understandable system architecture
-* Its own package manager
-* Support for graphical applications and desktop environments
-* A growing collection of native Aethel packages
-* An environment suitable for experimentation and systems programming
+The goal is not to create the most feature-rich distribution as quickly as possible, but to understand and build the pieces that make a Linux system work.
 
-The project is intentionally developed step by step rather than trying to build everything at once.
+Aethel intentionally keeps its userspace small, explicit, and close to the Linux kernel.
 
-## Current Features
+Much of the system is implemented directly on top of Linux system calls rather than relying on a traditional C library or large external frameworks.
 
-![Screenshot](res/screenshot1.png)
+## What is Aethel?
 
-Aethel currently includes:
+Aethel is built around a simple idea:
 
-* Custom PID 1 (`/init`)
-* Custom shell
-* Direct Linux syscall interface
-* Process creation with `fork`
-* Program execution with `execve`
-* Process waiting
-* Basic filesystem operations
-* `ls`
-* `cd`
-* `pwd`
-* `cat`
-* `mkdir`
-* `touch`
-* `rm`
-* `cp`
-* `mv`
-* `rmdir`
-* `env`
-* `PATH` support
+```text
+Linux Kernel
+     │
+     ▼
+Linux System Calls
+     │
+     ▼
+Aethel Userspace
+     │
+     ├── Aethel Bash
+     ├── System Utilities
+     ├── Archive Support
+     ├── YoYo Package Manager
+     └── Applications
+```
+
+The Linux kernel provides the kernel layer, while Aethel builds its own environment on top of it.
+
+## Aethel Bash
+
+Aethel comes with its own shell — **Aethel Bash**.
+
+It supports shell features such as:
+
+* Pipes
+* Command chaining
+* Redirection
 * Environment variables
-* Input/output redirection
-* External ELF program execution
+* `PATH`
+* Wildcards
+* External ELF programs
+* Process management
+* Shell builtins
+
+The shell communicates with Linux directly through Aethel's syscall interface.
+
+## Built From Scratch
+
+Aethel already includes several components implemented specifically for the project.
+
+Among them are:
+
+* Custom PID 1
+* Custom syscall interface
+* Custom shell
+* Native system utilities
+* ELF program execution
 * `/proc` support
-* Linux kernel boot through QEMU
+* TAR archive support
+* GZIP decompression
+* DEFLATE decompression
+* Huffman decoding
+* CRC32 verification
+
+These components form the foundation for a larger Aethel userspace.
+
+## YoYo
+
+**YoYo** is Aethel's planned package manager.
+
+It is being designed as the package and software management system for the distribution.
+
+The project is also developing its own package repository infrastructure, allowing Aethel packages to eventually be distributed through a native ecosystem.
+
+The goal is to make software management simple:
+
+```bash
+yoyo install <package>
+yoyo remove <package>
+yoyo update
+```
+
+YoYo is already under development.
 
 ## Architecture
 
-Aethel currently uses the Linux kernel as its kernel layer while providing its own userspace.
+Aethel currently uses the Linux kernel while providing its own userspace.
 
 ```text
 ┌──────────────────────────────┐
@@ -73,7 +118,11 @@ Aethel currently uses the Linux kernel as its kernel layer while providing its o
 └──────────────────────────────┘
 ```
 
-The userspace is intentionally kept small and explicit. Most functionality is implemented directly on top of Linux system calls without relying on a traditional C library.
+The architecture is intentionally kept understandable and modular, making it possible to experiment with individual parts of the system without hiding them behind large abstractions.
+
+## Screenshots
+
+![Aethel Linux](res/screenshot1.png)
 
 ## Building
 
@@ -86,14 +135,14 @@ The userspace is intentionally kept small and explicit. Most functionality is im
 * QEMU
 * cpio
 
-### Clone the repository
+### Clone
 
 ```bash
 git clone https://github.com/viskasssssss/Aethel-Linux.git
 cd Aethel-Linux
 ```
 
-### Initialize the kernel submodule
+### Initialize the kernel
 
 ```bash
 git submodule update --init --depth 1
@@ -126,45 +175,40 @@ Aethel-Linux/
 
 ## Roadmap
 
-Aethel is still in its early stages. Planned development includes:
+Aethel is still in early development. The system will grow gradually as new components are implemented.
 
+* [x] Custom PID 1
+* [x] Custom shell
+* [x] Direct Linux syscall interface
+* [x] Native system utilities
+* [x] Environment variables
+* [x] Shell expansion
+* [x] Wildcard expansion
+* [x] Pipelines and redirection
+* [x] External ELF execution
+* [x] `/proc` support
+* [x] TAR support
+* [x] GZIP / DEFLATE support
+* [x] Archive extraction
 * [ ] Dynamic memory allocation
-* [ ] Environment variable management
-* [ ] Shell variable expansion
 * [ ] More system utilities
 * [ ] Better filesystem support
-* [ ] A C library / userspace runtime
-* [ ] Shared libraries and dynamic linking
-* [ ] A native package manager
-* [ ] Package repositories
-* [ ] System configuration tools
-* [ ] Networking utilities
+* [ ] C library / userspace runtime
+* [ ] Shared libraries
+* [ ] Dynamic linking
+* [ ] YoYo package manager
+* [ ] Native package repositories
+* [ ] Networking
 * [ ] Graphical environment
 * [ ] Desktop applications
 * [ ] Native Aethel applications
-* [ ] A complete desktop experience
+* [ ] Complete desktop experience
 
-The roadmap is intentionally flexible and will evolve as the project develops.
-
-## Package Manager
-
-Aethel is planned to have its own package manager, **YoYo**.
-
-The goal is to eventually make installing software as simple as:
-
-```bash
-yoyo install <package>
-yoyo remove <package>
-yoyo update
-```
-
-YoYo will become part of the Aethel userspace and package ecosystem as the project matures.
-
-> Work on YoYo is already underway, and it may soon become part of Aethel.
+The roadmap is intentionally flexible and will evolve with the project.
 
 ## Contributing
 
-Aethel is an open-source project and experimentation is encouraged.
+Aethel is an open-source project built around experimentation and learning.
 
 You can:
 
@@ -172,14 +216,21 @@ You can:
 * Experiment with the userspace
 * Add new utilities
 * Improve existing components
-* Create your own Aethel-based distribution
+* Work on new system components
 * Suggest features
 * Submit pull requests
+* Create your own Aethel-based experiments
 
-There are no strict rules about how your fork must work. Aethel is intended to be a foundation for experimentation as well as a distribution in its own right.
+There are no strict rules about how a fork must work.
+
+Aethel is both a Linux distribution and a playground for systems programming.
 
 ## License
 
 Aethel Linux is licensed under the GNU General Public License v3.0 or later.
 
 See the [LICENSE](LICENSE) file for the full license text.
+
+---
+
+**Aethel Linux — build the system, understand the system.**
