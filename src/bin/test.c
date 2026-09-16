@@ -17,24 +17,39 @@ You should have received a copy of the GNU General Public License
 along with Aethel. If not, see <https://www.gnu.org/licenses/>.
 */
 
-#include "archive.h"
+#include "tar.h"
 #include "syscall.h"
 #include "log.h"
 
-int main(void)
+int main(
+    int argc,
+    char **argv
+)
 {
-    int result = archive_extract(
-        "/test.tar.gz",
-        "/tmp/result"
-    );
-
-    if (!result)
+    if (argc < 3)
     {
-        log_error("archive extraction failed\n");
+        log_error(
+            "test: usage: test <source> <archive>\n"
+        );
+
         return 1;
     }
 
-    log_success("archive extraction successful\n");
+    const char *source = argv[1];
+    const char *archive = argv[2];
+
+    if (!tar_create(source, archive))
+    {
+        log_error(
+            "test: tar creation failed\n"
+        );
+
+        return 1;
+    }
+
+    log_write(
+        "test: tar archive created successfully\n"
+    );
 
     return 0;
 }

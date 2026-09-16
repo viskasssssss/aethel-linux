@@ -21,6 +21,10 @@ along with Aethel. If not, see <https://www.gnu.org/licenses/>.
 
 #define EEXIST 17
 
+#define S_IFMT 0170000
+#define S_IFREG 0100000
+#define S_IFDIR 0040000
+
 enum tar_type
 {
     TAR_TYPE_FILE,
@@ -51,22 +55,35 @@ struct tar_header
 };
 
 int tar_open(const char *path);
+
 int tar_next(int fd, struct tar_header *header);
+
 long tar_parse_size(const char *size);
+
 long tar_read(int fd, void *buffer, long size);
+
 enum tar_type tar_get_type(const struct tar_header *header);
+
 int tar_extract_file(int fd, const struct tar_header *header, const char *destination);
+
 long tar_build_path(
     char *buffer,
     long buffer_size,
     const char *destination,
     const char *name
 );
+
 int tar_extract_directory(
     const struct tar_header *header,
     const char *destination
 );
+
 int tar_extract(
     int fd,
+    const char *destination
+);
+
+int tar_create(
+    const char *source,
     const char *destination
 );
