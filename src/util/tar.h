@@ -19,6 +19,8 @@ along with Aethel. If not, see <https://www.gnu.org/licenses/>.
 
 #pragma once
 
+#define EEXIST 17
+
 enum tar_type
 {
     TAR_TYPE_FILE,

@@ -270,7 +270,8 @@ int tar_extract_directory(
         mode
     );
 
-    if (result < 0)
+    if (result < 0 &&
+        result != -EEXIST)
     {
         return 0;
     }

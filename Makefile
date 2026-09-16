@@ -48,7 +48,8 @@ $(ROOTFS_DIR)/bin/%: src/bin/%.c \
     $(BUILD_DIR)/bit.o \
     $(BUILD_DIR)/deflate.o \
     $(BUILD_DIR)/huffman.o \
-    $(BUILD_DIR)/crc32.o
+    $(BUILD_DIR)/crc32.o \
+    $(BUILD_DIR)/archive.o
 	@echo "CC   $<"
 	@$(CC) -c $(CFLAGS) $< -o $(BUILD_DIR)/$*.o
 	@echo "LD   $@"
@@ -62,8 +63,13 @@ $(ROOTFS_DIR)/bin/%: src/bin/%.c \
 		$(BUILD_DIR)/deflate.o \
 		$(BUILD_DIR)/huffman.o \
 		$(BUILD_DIR)/crc32.o \
+		$(BUILD_DIR)/archive.o \
 		$(BUILD_DIR)/$*.o \
 		-o $@
+
+$(BUILD_DIR)/archive.o: $(SRC_DIR)/util/archive.c $(SRC_DIR)/util/archive.h $(SRC_DIR)/util/syscall.h
+	@echo "CC   $<"
+	@$(CC) -c $(CFLAGS) $< -o $@
 
 $(BUILD_DIR)/crc32.o: $(SRC_DIR)/util/crc32.c $(SRC_DIR)/util/crc32.h $(SRC_DIR)/util/syscall.h
 	@echo "CC   $<"
