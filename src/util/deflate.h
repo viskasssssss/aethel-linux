@@ -160,3 +160,29 @@ int deflate_write_dynamic_header(
     const struct deflate_code_length_symbol *symbols,
     int symbol_count
 );
+
+int deflate_write_literal(
+    struct bit_writer *writer,
+    const struct huffman_code *codes,
+    int symbol
+);
+
+int deflate_write_end(
+    struct bit_writer *writer,
+    const struct huffman_code *codes
+);
+
+int deflate_write_dynamic_match(
+    struct bit_writer *writer,
+    const struct huffman_code *literal_codes,
+    const struct huffman_code *distance_codes,
+    int length,
+    int distance
+);
+
+int deflate_write_dynamic_block(
+    struct bit_writer *writer,
+    const unsigned char *data,
+    long size,
+    int final
+);

@@ -21,14 +21,8 @@ along with Aethel. If not, see <https://www.gnu.org/licenses/>.
 #include "huffman.h"
 #include "log.h"
 
-int main(
-    int argc,
-    char **argv
-)
+static int test_huffman(void)
 {
-    (void)argc;
-    (void)argv;
-
     unsigned long literal_frequencies[286];
 
     for (int i = 0; i < 286; i++)
@@ -36,12 +30,6 @@ int main(
         literal_frequencies[i] = 0;
     }
 
-    /*
-     * Fibonacci-like frequencies.
-     *
-     * This should produce a very unbalanced
-     * Huffman tree with long code lengths.
-     */
     unsigned long a = 1;
     unsigned long b = 1;
 
@@ -57,7 +45,6 @@ int main(
     }
 
     unsigned char literal_lengths[286];
-
     struct huffman_code literal_codes[286];
 
     if (!huffman_build_lengths(
@@ -66,30 +53,8 @@ int main(
         286
     ))
     {
-        return 1;
+        return 0;
     }
-
-    int max_length_before = 0;
-
-    for (int i = 0; i < 286; i++)
-    {
-        if (literal_lengths[i] >
-            max_length_before)
-        {
-            max_length_before =
-                literal_lengths[i];
-        }
-    }
-
-    log_info(
-        "Max length before: "
-    );
-
-    log_number(
-        max_length_before
-    );
-
-    log_info("\n");
 
     if (!huffman_limit_lengths(
         literal_lengths,
@@ -98,30 +63,8 @@ int main(
         15
     ))
     {
-        return 1;
+        return 0;
     }
-
-    int max_length_after = 0;
-
-    for (int i = 0; i < 286; i++)
-    {
-        if (literal_lengths[i] >
-            max_length_after)
-        {
-            max_length_after =
-                literal_lengths[i];
-        }
-    }
-
-    log_info(
-        "Max length after: "
-    );
-
-    log_number(
-        max_length_after
-    );
-
-    log_info("\n");
 
     if (!huffman_build(
         literal_codes,
@@ -129,75 +72,50 @@ int main(
         286
     ))
     {
-        return 1;
+        return 0;
     }
-
-    int active_count = 0;
-
-    for (int i = 0; i < 286; i++)
-    {
-        if (literal_lengths[i] > 0)
-        {
-            active_count++;
-        }
-    }
-
-    log_info("Active symbols: ");
-    log_number(active_count);
-    log_info("\n");
 
     int kraft = 0;
 
     for (int i = 0; i < 286; i++)
     {
         if (literal_lengths[i] == 0)
-        {
             continue;
-        }
 
         kraft +=
             1 << (15 - literal_lengths[i]);
     }
 
-    log_info("Kraft slots: ");
-    log_number(kraft);
-    log_info(" / 32768\n");
-
-    int valid = 1;
+    if (kraft != 32768)
+    {
+        return 0;
+    }
 
     for (int i = 0; i < 286; i++)
     {
         if (literal_lengths[i] == 0)
-        {
             continue;
-        }
 
         for (int j = i + 1; j < 286; j++)
         {
             if (literal_lengths[j] == 0)
-            {
                 continue;
-            }
 
             if (literal_lengths[i] ==
                     literal_lengths[j] &&
                 literal_codes[i].code ==
                     literal_codes[j].code)
             {
-                valid = 0;
+                return 0;
             }
         }
     }
 
-    if (valid)
-    {
-        log_info("Codes: valid\n");
-    }
-    else
-    {
-        log_info("Codes: INVALID\n");
-    }
+    return 1;
+}
 
+static int test_dynamic_header(void)
+{
     unsigned char test_literal_lengths[286] = {0};
     unsigned char test_distance_lengths[30] = {0};
 
@@ -213,10 +131,14 @@ int main(
     int symbol_count;
 
     int literal_count =
-        deflate_get_literal_count(test_literal_lengths);
+        deflate_get_literal_count(
+            test_literal_lengths
+        );
 
     int distance_count =
-        deflate_get_distance_count(test_distance_lengths);
+        deflate_get_distance_count(
+            test_distance_lengths
+        );
 
     if (!deflate_encode_code_lengths(
         test_literal_lengths,
@@ -227,28 +149,7 @@ int main(
         &symbol_count
     ))
     {
-        return 1;
-    }
-
-    log_info(
-        "\nCode length RLE:\n"
-    );
-
-    for (int i = 0; i < symbol_count; i++)
-    {
-        log_info("symbol=");
-
-        log_number(symbols[i].symbol);
-
-        log_info(" extra=");
-
-        log_number(symbols[i].extra);
-
-        log_info(" extra_bits=");
-
-        log_number(symbols[i].extra_bits);
-
-        log_info("\n");
+        return 0;
     }
 
     unsigned long code_length_frequencies[19];
@@ -259,21 +160,11 @@ int main(
         code_length_frequencies
     ))
     {
-        return 1;
-    }
-
-    log_info("\nCode length frequencies:\n");
-
-    for (int i = 0; i < 19; i++)
-    {
-        log_info("symbol=");
-        log_number(i);
-        log_info(" frequency=");
-        log_number(code_length_frequencies[i]);
-        log_info("\n");
+        return 0;
     }
 
     unsigned char code_length_lengths[19];
+
     int code_length_count = 19;
 
     if (!huffman_build_lengths(
@@ -282,46 +173,18 @@ int main(
         code_length_count
     ))
     {
-        return 1;
+        return 0;
     }
-
-    int max_code_length = 0;
-
-    for (int i = 0; i < code_length_count; i++)
-    {
-        if (code_length_lengths[i] > max_code_length)
-            max_code_length = code_length_lengths[i];
-    }
-
-    log_info("\nCode length Huffman:\n");
-
-    log_info("Max length before: ");
-    log_number(max_code_length);
-    log_info("\n");
-
-    int max_length = 7;
 
     if (!huffman_limit_lengths(
         code_length_lengths,
         code_length_frequencies,
         code_length_count,
-        max_length
+        7
     ))
     {
-        return 1;
+        return 0;
     }
-
-    max_code_length = 0;
-
-    for (int i = 0; i < code_length_count; i++)
-    {
-        if (code_length_lengths[i] > max_code_length)
-            max_code_length = code_length_lengths[i];
-    }
-
-    log_info("Max length after: ");
-    log_number(max_code_length);
-    log_info("\n");
 
     struct huffman_code code_length_codes[19];
 
@@ -331,53 +194,13 @@ int main(
         code_length_count
     ))
     {
-        return 1;
-    }
-
-    for (int i = 0; i < 19; i++)
-    {
-        if (code_length_lengths[i] == 0)
-            continue;
-
-        log_info("symbol=");
-        log_number(i);
-        log_info(" length=");
-        log_number(code_length_lengths[i]);
-        log_info(" code=");
-        log_number(code_length_codes[i].code);
-        log_info("\n");
+        return 0;
     }
 
     code_length_count =
-    deflate_get_code_length_count(code_length_lengths);
-
-    log_info("Code length count: ");
-    log_number(code_length_count);
-    log_info("\n");
-
-    int hclen = code_length_count - 4;
-
-    log_info("HCLEN: ");
-    log_number(hclen);
-    log_info("\n");
-
-    log_info("\nDynamic counts:\n");
-
-    log_info("Literal count: ");
-    log_number(literal_count);
-    log_info("\n");
-
-    log_info("Distance count: ");
-    log_number(distance_count);
-    log_info("\n");
-
-    log_info("HLIT: ");
-    log_number(literal_count - 257);
-    log_info("\n");
-
-    log_info("HDIST: ");
-    log_number(distance_count - 1);
-    log_info("\n");
+        deflate_get_code_length_count(
+            code_length_lengths
+        );
 
     int fd = sys_openat(
         -100,
@@ -387,7 +210,7 @@ int main(
     );
 
     if (fd < 0)
-        return 1;
+        return 0;
 
     struct bit_writer writer;
 
@@ -407,13 +230,13 @@ int main(
     ))
     {
         sys_close(fd);
-        return 1;
+        return 0;
     }
 
     if (!bit_writer_flush(&writer))
     {
         sys_close(fd);
-        return 1;
+        return 0;
     }
 
     sys_close(fd);
@@ -426,7 +249,7 @@ int main(
     );
 
     if (fd < 0)
-        return 1;
+        return 0;
 
     struct bit_reader reader;
 
@@ -435,43 +258,31 @@ int main(
         fd
     );
 
-    int count = 5;
-
     unsigned long hlit =
         bit_read_bits(
             &reader,
-            count
+            5
         );
-
-    count = 5;
 
     unsigned long hdist =
         bit_read_bits(
             &reader,
-            count
+            5
         );
 
-    count = 4;
-
-    unsigned long read_hclen =
+    unsigned long hclen =
         bit_read_bits(
             &reader,
-            count
+            4
         );
 
-    log_info("\nRead Dynamic Header:\n");
-
-    log_info("HLIT: ");
-    log_number(hlit);
-    log_info("\n");
-
-    log_info("HDIST: ");
-    log_number(hdist);
-    log_info("\n");
-
-    log_info("HCLEN: ");
-    log_number(read_hclen);
-    log_info("\n");
+    if (hlit != (unsigned long)(literal_count - 257) ||
+        hdist != (unsigned long)(distance_count - 1) ||
+        hclen != (unsigned long)(code_length_count - 4))
+    {
+        sys_close(fd);
+        return 0;
+    }
 
     static const int order[19] =
     {
@@ -482,9 +293,9 @@ int main(
         2, 14, 1, 15
     };
 
-    log_info("\nRead Code Length Lengths:\n");
+    unsigned char read_code_length_lengths[19] = {0};
 
-    for (int i = 0; i < (int)read_hclen + 4; i++)
+    for (int i = 0; i < (int)hclen + 4; i++)
     {
         unsigned long length =
             bit_read_bits(
@@ -492,24 +303,26 @@ int main(
                 3
             );
 
-        log_info("symbol=");
-        log_number(order[i]);
-
-        log_info(" length=");
-        log_number(length);
-
-        log_info("\n");
+        read_code_length_lengths[order[i]] =
+            length;
     }
 
-    log_info("\nRead Code Length RLE:\n");
+    for (int i = 0; i < 19; i++)
+    {
+        if (read_code_length_lengths[i] !=
+            code_length_lengths[i])
+        {
+            sys_close(fd);
+            return 0;
+        }
+    }
 
     unsigned char decoded_lengths[286 + 30] = {0};
     int decoded_count = 0;
 
-    while (decoded_count < literal_count + distance_count)
+    while (decoded_count <
+           literal_count + distance_count)
     {
-        int count = 0;
-
         int symbol =
             huffman_decode(
                 &reader,
@@ -520,27 +333,20 @@ int main(
         if (symbol < 0)
         {
             sys_close(fd);
-            return 1;
+            return 0;
         }
-
-        log_info("symbol=");
-        log_number(symbol);
 
         if (symbol <= 15)
         {
             decoded_lengths[decoded_count++] =
                 symbol;
-
-            log_info("\n");
         }
         else if (symbol == 16)
         {
-            count = 2;
-
             unsigned long extra =
                 bit_read_bits(
                     &reader,
-                    count
+                    2
                 );
 
             int repeat = extra + 3;
@@ -548,7 +354,7 @@ int main(
             if (decoded_count == 0)
             {
                 sys_close(fd);
-                return 1;
+                return 0;
             }
 
             unsigned char length =
@@ -556,72 +362,75 @@ int main(
 
             for (int i = 0; i < repeat; i++)
             {
+                if (decoded_count >=
+                    literal_count + distance_count)
+                {
+                    sys_close(fd);
+                    return 0;
+                }
+
                 decoded_lengths[decoded_count++] =
                     length;
             }
-
-            log_info(" repeat=");
-            log_number(repeat);
-            log_info("\n");
         }
         else if (symbol == 17)
         {
-            count = 3;
-
             unsigned long extra =
                 bit_read_bits(
                     &reader,
-                    count
+                    3
                 );
 
             int repeat = extra + 3;
 
             for (int i = 0; i < repeat; i++)
             {
+                if (decoded_count >=
+                    literal_count + distance_count)
+                {
+                    sys_close(fd);
+                    return 0;
+                }
+
                 decoded_lengths[decoded_count++] = 0;
             }
-
-            log_info(" repeat=");
-            log_number(repeat);
-            log_info("\n");
         }
         else if (symbol == 18)
         {
-            count = 7;
-
             unsigned long extra =
                 bit_read_bits(
                     &reader,
-                    count
+                    7
                 );
 
             int repeat = extra + 11;
 
             for (int i = 0; i < repeat; i++)
             {
+                if (decoded_count >=
+                    literal_count + distance_count)
+                {
+                    sys_close(fd);
+                    return 0;
+                }
+
                 decoded_lengths[decoded_count++] = 0;
             }
-
-            log_info(" repeat=");
-            log_number(repeat);
-            log_info("\n");
         }
         else
         {
             sys_close(fd);
-            return 1;
+            return 0;
         }
     }
-
-    int valid_lengths = 1;
 
     for (int i = 0; i < literal_count; i++)
     {
         if (decoded_lengths[i] !=
             test_literal_lengths[i])
         {
-            valid_lengths = 0;
-            break;
+            sys_close(fd);
+            return 0;
         }
     }
 
@@ -630,22 +439,220 @@ int main(
         if (decoded_lengths[literal_count + i] !=
             test_distance_lengths[i])
         {
-            valid_lengths = 0;
-            break;
+            sys_close(fd);
+            return 0;
         }
     }
 
-    if (valid_lengths &&
-        decoded_count == literal_count + distance_count)
+    sys_close(fd);
+
+    return 1;
+}
+
+static int test_dynamic_data(void)
+{
+    unsigned char literal_lengths[286] = {0};
+    unsigned char distance_lengths[30] = {0};
+
+    literal_lengths[256] = 1;
+    literal_lengths[257] = 1;
+
+    distance_lengths[0] = 1;
+
+    struct huffman_code literal_codes[286];
+    struct huffman_code distance_codes[30];
+
+    if (!huffman_build(
+        literal_codes,
+        literal_lengths,
+        286
+    ))
     {
-        log_info("RLE lengths: valid\n");
+        return 0;
     }
-    else
+
+    if (!huffman_build(
+        distance_codes,
+        distance_lengths,
+        30
+    ))
     {
-        log_info("RLE lengths: INVALID\n");
+        return 0;
+    }
+
+    int fd = sys_openat(
+        -100,
+        "/tmp/dynamic-data",
+        O_WRONLY | O_CREAT | O_TRUNC,
+        0644
+    );
+
+    if (fd < 0)
+        return 0;
+
+    struct bit_writer writer;
+
+    bit_writer_init(
+        &writer,
+        fd
+    );
+
+    if (!deflate_write_dynamic_match(
+        &writer,
+        literal_codes,
+        distance_codes,
+        3,
+        1
+    ))
+    {
+        sys_close(fd);
+        return 0;
+    }
+
+    if (!deflate_write_end(
+        &writer,
+        literal_codes
+    ))
+    {
+        sys_close(fd);
+        return 0;
+    }
+
+    if (!bit_writer_flush(&writer))
+    {
+        sys_close(fd);
+        return 0;
     }
 
     sys_close(fd);
+
+    fd = sys_openat(
+        -100,
+        "/tmp/dynamic-data",
+        O_RDONLY,
+        0
+    );
+
+    if (fd < 0)
+        return 0;
+
+    struct bit_reader reader;
+
+    bit_reader_init(
+        &reader,
+        fd
+    );
+
+    int symbol =
+        huffman_decode(
+            &reader,
+            literal_codes,
+            286
+        );
+
+    if (symbol != 257)
+    {
+        sys_close(fd);
+        return 0;
+    }
+
+    symbol =
+        huffman_decode(
+            &reader,
+            distance_codes,
+            30
+        );
+
+    if (symbol != 0)
+    {
+        sys_close(fd);
+        return 0;
+    }
+
+    symbol =
+        huffman_decode(
+            &reader,
+            literal_codes,
+            286
+        );
+
+    if (symbol != 256)
+    {
+        sys_close(fd);
+        return 0;
+    }
+
+    sys_close(fd);
+
+    return 1;
+}
+
+static int test_dynamic_block(void)
+{
+    const unsigned char data[] = "AAAAAA";
+
+    int fd = sys_openat(
+        -100,
+        "/tmp/dynamic-block",
+        O_WRONLY | O_CREAT | O_TRUNC,
+        0644
+    );
+
+    if (fd < 0)
+        return 0;
+
+    struct bit_writer writer;
+
+    bit_writer_init(
+        &writer,
+        fd
+    );
+
+    if (!deflate_write_dynamic_block(
+        &writer,
+        data,
+        6,
+        1
+    ))
+    {
+        sys_close(fd);
+        return 0;
+    }
+
+    if (!bit_writer_flush(&writer))
+    {
+        sys_close(fd);
+        return 0;
+    }
+
+    sys_close(fd);
+
+    log_info("Dynamic block written\n");
+
+    return 1;
+}
+
+int main(
+    int *argc,
+    char **argv
+)
+{
+    (void)argc;
+    (void)argv;
+
+    if (!test_huffman())
+        return 1;
+
+    if (!test_dynamic_header())
+        return 1;
+
+    if (!test_dynamic_data())
+        return 1;
+
+    if (!test_dynamic_block())
+        return 1;
+
+    log_info("All tests passed\n");
 
     return 0;
 }

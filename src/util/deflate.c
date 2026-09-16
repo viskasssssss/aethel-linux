@@ -1234,3 +1234,410 @@ int deflate_write_dynamic_header(
 
     return 1;
 }
+
+int deflate_write_literal(
+    struct bit_writer *writer,
+    const struct huffman_code *codes,
+    int symbol
+)
+{
+    if (symbol < 0 || symbol > 255)
+    {
+        return 0;
+    }
+
+    if (codes[symbol].length <= 0)
+    {
+        return 0;
+    }
+
+    if (!bit_write(
+        writer,
+        codes[symbol].code,
+        codes[symbol].length
+    ))
+    {
+        return 0;
+    }
+
+    return 1;
+}
+
+int deflate_write_end(
+    struct bit_writer *writer,
+    const struct huffman_code *codes
+)
+{
+    if (codes[256].length <= 0)
+        return 0;
+
+    if (!bit_write(
+        writer,
+        codes[256].code,
+        codes[256].length
+    ))
+    {
+        return 0;
+    }
+
+    return 1;
+}
+
+int deflate_write_dynamic_match(
+    struct bit_writer *writer,
+    const struct huffman_code *literal_codes,
+    const struct huffman_code *distance_codes,
+    int length,
+    int distance
+)
+{
+    int length_code;
+    int length_extra;
+    int length_extra_bits;
+
+    if (!deflate_length_code(
+        length,
+        &length_code,
+        &length_extra,
+        &length_extra_bits
+    ))
+    {
+        return 0;
+    }
+
+    int distance_code;
+    int distance_extra;
+    int distance_extra_bits;
+
+    if (!deflate_distance_code(
+        distance,
+        &distance_code,
+        &distance_extra,
+        &distance_extra_bits
+    ))
+    {
+        return 0;
+    }
+
+    if (literal_codes[length_code].length <= 0)
+        return 0;
+
+    if (!bit_write(
+        writer,
+        literal_codes[length_code].code,
+        literal_codes[length_code].length
+    ))
+    {
+        return 0;
+    }
+
+    if (length_extra_bits > 0)
+    {
+        if (!bit_write(
+            writer,
+            length_extra,
+            length_extra_bits
+        ))
+        {
+            return 0;
+        }
+    }
+
+    if (distance_codes[distance_code].length <= 0)
+        return 0;
+
+    if (!bit_write(
+        writer,
+        distance_codes[distance_code].code,
+        distance_codes[distance_code].length
+    ))
+    {
+        return 0;
+    }
+
+    if (distance_extra_bits > 0)
+    {
+        if (!bit_write(
+            writer,
+            distance_extra,
+            distance_extra_bits
+        ))
+        {
+            return 0;
+        }
+    }
+
+    return 1;
+}
+
+int deflate_write_dynamic_block(
+    struct bit_writer *writer,
+    const unsigned char *data,
+    long size,
+    int final
+)
+{
+    unsigned long literal_frequencies[286];
+    unsigned long distance_frequencies[30];
+
+    if (!deflate_build_frequencies(
+        data,
+        size,
+        literal_frequencies,
+        distance_frequencies
+    ))
+    {
+        return 0;
+    }
+
+    unsigned char literal_lengths[286] = {0};
+    unsigned char distance_lengths[30] = {0};
+
+    if (!huffman_build_lengths(
+        literal_frequencies,
+        literal_lengths,
+        286
+    ))
+    {
+        return 0;
+    }
+
+    if (!huffman_limit_lengths(
+        literal_lengths,
+        literal_frequencies,
+        286,
+        15
+    ))
+    {
+        return 0;
+    }
+
+    /*
+    * A distance tree with one active symbol
+    * needs a one-bit code.
+    */
+    int distance_active = 0;
+
+    for (int i = 0; i < 30; i++)
+    {
+        if (distance_frequencies[i] != 0)
+        {
+            distance_active++;
+        }
+    }
+
+    if (distance_active == 1)
+    {
+        for (int i = 0; i < 30; i++)
+        {
+            if (distance_frequencies[i] != 0)
+            {
+                distance_lengths[i] = 1;
+                break;
+            }
+        }
+    }
+    else
+    {
+        if (!huffman_build_lengths(
+            distance_frequencies,
+            distance_lengths,
+            30
+        ))
+        {
+            return 0;
+        }
+
+        if (!huffman_limit_lengths(
+            distance_lengths,
+            distance_frequencies,
+            30,
+            15
+        ))
+        {
+            return 0;
+        }
+    }
+
+    int literal_count =
+        deflate_get_literal_count(
+            literal_lengths
+        );
+
+    int distance_count =
+        deflate_get_distance_count(
+            distance_lengths
+        );
+
+    struct deflate_code_length_symbol symbols[320];
+    int symbol_count;
+
+    if (!deflate_encode_code_lengths(
+        literal_lengths,
+        distance_lengths,
+        literal_count,
+        distance_count,
+        symbols,
+        &symbol_count
+    ))
+    {
+        return 0;
+    }
+
+    unsigned long code_length_frequencies[19] = {0};
+
+    if (!deflate_build_code_length_frequencies(
+        symbols,
+        symbol_count,
+        code_length_frequencies
+    ))
+    {
+        return 0;
+    }
+
+    unsigned char code_length_lengths[19] = {0};
+
+    if (!huffman_build_lengths(
+        code_length_frequencies,
+        code_length_lengths,
+        19
+    ))
+    {
+        return 0;
+    }
+
+    if (!huffman_limit_lengths(
+        code_length_lengths,
+        code_length_frequencies,
+        19,
+        7
+    ))
+    {
+        return 0;
+    }
+
+    struct huffman_code literal_codes[286];
+    struct huffman_code distance_codes[30];
+    struct huffman_code code_length_codes[19];
+
+    if (!huffman_build(
+        literal_codes,
+        literal_lengths,
+        286
+    ))
+    {
+        return 0;
+    }
+
+    if (!huffman_build(
+        distance_codes,
+        distance_lengths,
+        30
+    ))
+    {
+        return 0;
+    }
+
+    if (!huffman_build(
+        code_length_codes,
+        code_length_lengths,
+        19
+    ))
+    {
+        return 0;
+    }
+
+    /*
+     * BFINAL
+     */
+    if (!bit_write(
+        writer,
+        final ? 1 : 0,
+        1
+    ))
+    {
+        return 0;
+    }
+
+    /*
+     * BTYPE = 2
+     */
+    if (!bit_write(
+        writer,
+        2,
+        2
+    ))
+    {
+        return 0;
+    }
+
+    if (!deflate_write_dynamic_header(
+        writer,
+        literal_lengths,
+        distance_lengths,
+        code_length_lengths,
+        code_length_codes,
+        symbols,
+        symbol_count
+    ))
+    {
+        return 0;
+    }
+
+    /*
+     * Write the actual LZ77 stream.
+     */
+    long position = 0;
+
+    while (position < size)
+    {
+        struct deflate_match match =
+            deflate_find_match(
+                data,
+                position,
+                size
+            );
+
+        if (match.length > 0)
+        {
+            if (!deflate_write_dynamic_match(
+                writer,
+                literal_codes,
+                distance_codes,
+                match.length,
+                match.distance
+            ))
+            {
+                return 0;
+            }
+
+            position += match.length;
+        }
+        else
+        {
+            if (!deflate_write_literal(
+                writer,
+                literal_codes,
+                data[position]
+            ))
+            {
+                return 0;
+            }
+
+            position++;
+        }
+    }
+
+    /*
+     * End Of Block.
+     */
+    if (!deflate_write_end(
+        writer,
+        literal_codes
+    ))
+    {
+        return 0;
+    }
+
+    return 1;
+}
