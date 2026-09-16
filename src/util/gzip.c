@@ -616,6 +616,15 @@ int gzip_create(
                 1
             );
         }
+        else if (compression == GZIP_COMPRESSION_DYNAMIC) 
+        {
+            result = deflate_write_dynamic_block( 
+                &writer, 
+                current, 
+                0, 
+                1 
+            );
+        }
         else
         {
             result = 0;
@@ -667,6 +676,15 @@ int gzip_create(
                     final
                 );
             }
+            else if (compression == GZIP_COMPRESSION_DYNAMIC) 
+            { 
+                result = deflate_write_dynamic_block( 
+                    &writer, 
+                    current, 
+                    current_size, 
+                    final 
+                ); 
+            }
             else
             {
                 result = 0;
@@ -700,7 +718,8 @@ int gzip_create(
         }
     }
 
-    if (compression == GZIP_COMPRESSION_FIXED)
+    if (compression == GZIP_COMPRESSION_FIXED ||
+        compression == GZIP_COMPRESSION_DYNAMIC)
     {
         if (!bit_writer_flush(&writer))
         {

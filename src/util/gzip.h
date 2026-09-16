@@ -44,7 +44,8 @@ struct gzip_footer
 enum gzip_compression
 {
     GZIP_COMPRESSION_NONE,
-    GZIP_COMPRESSION_FIXED
+    GZIP_COMPRESSION_FIXED,
+    GZIP_COMPRESSION_DYNAMIC
 };
 
 int gzip_open(const char *path);
