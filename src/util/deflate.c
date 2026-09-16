@@ -773,3 +773,82 @@ struct deflate_match deflate_find_match(
 
     return result;
 }
+
+int deflate_build_frequencies(
+    const unsigned char *data,
+    long size,
+    unsigned long *literal_frequencies,
+    unsigned long *distance_frequencies
+)
+{
+    for (int i = 0; i < 286; i++)
+    {
+        literal_frequencies[i] = 0;
+    }
+
+    for (int i = 0; i < 30; i++)
+    {
+        distance_frequencies[i] = 0;
+    }
+
+    long position = 0;
+
+    while (position < size)
+    {
+        struct deflate_match match =
+            deflate_find_match(
+                data,
+                position,
+                size
+            );
+
+        if (match.length > 0)
+        {
+            int length_code;
+            int length_extra;
+            int length_extra_bits;
+
+            if (!deflate_length_code(
+                match.length,
+                &length_code,
+                &length_extra,
+                &length_extra_bits
+            ))
+            {
+                return 0;
+            }
+
+            int distance_code;
+            int distance_extra;
+            int distance_extra_bits;
+
+            if (!deflate_distance_code(
+                match.distance,
+                &distance_code,
+                &distance_extra,
+                &distance_extra_bits
+            ))
+            {
+                return 0;
+            }
+
+            literal_frequencies[length_code]++;
+            distance_frequencies[distance_code]++;
+
+            position += match.length;
+        }
+        else
+        {
+            literal_frequencies[data[position]]++;
+
+            position++;
+        }
+    }
+
+    /*
+     * End Of Block
+     */
+    literal_frequencies[256]++;
+
+    return 1;
+}

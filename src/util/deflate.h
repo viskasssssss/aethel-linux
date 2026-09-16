@@ -96,3 +96,10 @@ struct deflate_match deflate_find_match(
     long position,
     long size
 );
+
+int deflate_build_frequencies(
+    const unsigned char *data,
+    long size,
+    unsigned long *literal_frequencies,
+    unsigned long *distance_frequencies
+);

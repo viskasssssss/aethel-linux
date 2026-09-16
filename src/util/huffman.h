@@ -44,3 +44,16 @@ int huffman_build(
     const unsigned char *lengths,
     int count
 );
+
+int huffman_build_lengths(
+    const unsigned long *frequencies,
+    unsigned char *lengths,
+    int count
+);
+
+int huffman_limit_lengths(
+    unsigned char *lengths,
+    const unsigned long *frequencies,
+    int count,
+    int max_length
+);
