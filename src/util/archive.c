@@ -110,3 +110,110 @@ int archive_extract(
 
     return 1;
 }
+
+int archive_extract_tar(
+    const char *path,
+    const char *destination
+)
+{
+    int tar = tar_open(path);
+
+    if (tar < 0)
+    {
+        log_error(
+            "archive: failed to open tar\n"
+        );
+
+        return 0;
+    }
+
+    int result = tar_extract(
+        tar,
+        destination
+    );
+
+    sys_close(tar);
+
+    if (!result)
+    {
+        log_error(
+            "archive: failed to extract tar\n"
+        );
+
+        return 0;
+    }
+
+    return 1;
+}
+
+int archive_extract_gzip(
+    const char *path,
+    const char *destination
+)
+{
+    int gzip = gzip_open(path);
+
+    if (gzip < 0)
+    {
+        log_error(
+            "archive: failed to open gzip\n"
+        );
+
+        return 0;
+    }
+
+    unsigned char buffer[65536];
+
+    long size = gzip_read_file(
+        gzip,
+        buffer,
+        sizeof(buffer),
+        0
+    );
+
+    sys_close(gzip);
+
+    if (size < 0)
+    {
+        log_error(
+            "archive: failed to decompress gzip\n"
+        );
+
+        return 0;
+    }
+
+    int output = sys_openat(
+        -100,
+        destination,
+        O_WRONLY | O_CREAT | O_TRUNC,
+        0644
+    );
+
+    if (output < 0)
+    {
+        log_error(
+            "archive: failed to create output file\n"
+        );
+
+        return 0;
+    }
+
+    long written = sys_write(
+        output,
+        buffer,
+        size
+    );
+
+    sys_close(output);
+
+    if (written != size)
+    {
+        log_error(
+            "archive: failed to write output file\n"
+        );
+
+        return 0;
+    }
+
+    return 1;
+}

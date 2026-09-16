@@ -23,3 +23,13 @@ int archive_extract(
     const char *path,
     const char *destination
 );
+
+int archive_extract_tar(
+    const char *path,
+    const char *destination
+);
+
+int archive_extract_gzip(
+    const char *path,
+    const char *destination
+);

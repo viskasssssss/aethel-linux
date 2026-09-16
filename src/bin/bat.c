@@ -54,9 +54,24 @@ enum bat_operation
     BAT_OPERATION_VERSION
 };
 
+enum bat_archive_type
+{
+    BAT_ARCHIVE_GZIP,
+    BAT_ARCHIVE_TAR
+};
+
+enum bat_compression
+{
+    BAT_COMPRESSION_GZIP,
+    BAT_COMPRESSION_NONE
+};
+
 struct bat_arguments
 {
     enum bat_operation operation;
+
+    enum bat_archive_type archive;
+    enum bat_compression compression;
 
     const char *input;
     const char *output;
@@ -78,8 +93,7 @@ int bat_parse_arguments(
             return 0;
         }
 
-        if (argument[1] == 'e' &&
-            argument[2] == '\0')
+        if (string_comparsion(argument, "-e") == 0)
         {
             if (i + 1 >= argc)
             {
@@ -95,8 +109,7 @@ int bat_parse_arguments(
             continue;
         }
 
-        if (argument[1] == 'o' &&
-            argument[2] == '\0')
+        if (string_comparsion(argument, "-o") == 0)
         {
             if (i + 1 >= argc)
             {
@@ -105,6 +118,22 @@ int bat_parse_arguments(
             }
 
             arguments->output = argv[++i];
+
+            continue;
+        }
+
+        if (string_comparsion(argument, "-tar") == 0)
+        {
+            arguments->archive =
+                BAT_ARCHIVE_TAR;
+
+            continue;
+        }
+
+        if (string_comparsion(argument, "-nc") == 0)
+        {
+            arguments->compression =
+                BAT_COMPRESSION_NONE;
 
             continue;
         }
@@ -143,6 +172,16 @@ int bat_validate_arguments(
         return 1;
     }
 
+    if (arguments->archive == BAT_ARCHIVE_GZIP &&
+        arguments->compression == BAT_COMPRESSION_NONE)
+    {
+        log_error(
+            "bat: -nc cannot be used without -tar.\n"
+        );
+
+        return 0;
+    }
+
     if (arguments->input == 0)
     {
         log_error("bat: no archive specified.\n");
@@ -165,24 +204,57 @@ int bat_execute(
     switch (arguments->operation)
     {
         case BAT_OPERATION_EXTRACT:
+        {
             log_write("Extracting '");
             log_info(arguments->input);
             log_write("'\n...\n");
-            
-            int result = archive_extract(
-                arguments->input,
-                arguments->output
-            );
 
-            if (result) {
-                log_success("Archive extracted successfully.\n");
+            int result;
+
+            if (arguments->archive == BAT_ARCHIVE_GZIP)
+            {
+                result = archive_extract_gzip(
+                    arguments->input,
+                    arguments->output
+                );
+            }
+            else if (arguments->archive == BAT_ARCHIVE_TAR)
+            {
+                if (arguments->compression ==
+                    BAT_COMPRESSION_GZIP)
+                {
+                    result = archive_extract(
+                        arguments->input,
+                        arguments->output
+                    );
+                }
+                else
+                {
+                    result = archive_extract_tar(
+                        arguments->input,
+                        arguments->output
+                    );
+                }
+            }
+            else
+            {
+                log_error("bat: unsupported archive type.\n");
+                return 0;
+            }
+
+            if (result)
+            {
+                log_success(
+                    "Archive extracted successfully.\n"
+                );
+
                 log_write("Output directory: '");
                 log_info(arguments->output);
                 log_write("'\n");
             }
-            // archive.c will output the error itself, so there is no need for an else
 
             return result;
+        }
         case BAT_OPERATION_VERSION:
             log_info("Aethel B.A.T. ");
             log_write(BAT_VERSION_STRING);
@@ -192,7 +264,7 @@ int bat_execute(
             log_write("There is NO WARRANTY, to the extent permitted by law.\n");
             return 1;
         default:
-            log_error("bat: unsupported operation\n");
+            log_error("bat: unsupported operation.\n");
             return 0;
     }
 }
@@ -201,6 +273,8 @@ int main(int argc, char **argv)
 {
     struct bat_arguments arguments = {
         .operation = BAT_OPERATION_NONE,
+        .archive = BAT_ARCHIVE_GZIP,
+        .compression = BAT_COMPRESSION_GZIP,
         .input = 0,
         .output = 0
     };
