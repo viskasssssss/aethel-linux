@@ -26,6 +26,13 @@ struct bit_reader
     int bits;
 };
 
+struct bit_writer
+{
+    int fd;
+    unsigned long buffer;
+    int bits;
+};
+
 void bit_reader_init(
     struct bit_reader *reader,
     int fd
@@ -38,4 +45,27 @@ int bit_read(
 unsigned long bit_read_bits(
     struct bit_reader *reader,
     int count
+);
+
+void bit_align(
+    struct bit_reader *reader
+);
+
+void bit_writer_init(
+    struct bit_writer *writer,
+    int fd
+);
+
+int bit_write(
+    struct bit_writer *writer,
+    unsigned long value,
+    int count
+);
+
+int bit_writer_flush(
+    struct bit_writer *writer
+);
+
+void bit_writer_align(
+    struct bit_writer *writer
 );

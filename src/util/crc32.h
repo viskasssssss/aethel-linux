@@ -23,3 +23,13 @@ unsigned long crc32(
     const unsigned char *data,
     long size
 );
+
+unsigned long crc32_update(
+    unsigned long crc,
+    const unsigned char *data,
+    long size
+);
+
+unsigned long crc32_finish(
+    unsigned long crc
+);

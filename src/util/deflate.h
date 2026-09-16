@@ -37,6 +37,12 @@ struct deflate_dynamic_header
     int code_length_count;
 };
 
+struct deflate_match
+{
+    int length;
+    int distance;
+};
+
 int deflate_read_block_header(
     struct bit_reader *reader,
     int *final,
@@ -69,4 +75,24 @@ int deflate_read_dynamic_lengths(
     const struct huffman_code *codes,
     int count,
     unsigned char *lengths
+);
+
+int deflate_read_stored_block(
+    struct bit_reader *reader,
+    unsigned char *output,
+    long output_capacity,
+    long *output_size
+);
+
+int deflate_write_fixed_block(
+    struct bit_writer *writer,
+    const unsigned char *data,
+    long size,
+    int final
+);
+
+struct deflate_match deflate_find_match(
+    const unsigned char *data,
+    long position,
+    long size
 );

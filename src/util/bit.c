@@ -82,3 +82,92 @@ unsigned long bit_read_bits(
 
     return result;
 }
+
+void bit_align(
+    struct bit_reader *reader
+)
+{
+    reader->buffer = 0;
+    reader->bits = 0;
+}
+
+void bit_writer_init(
+    struct bit_writer *writer,
+    int fd
+)
+{
+    writer->fd = fd;
+    writer->buffer = 0;
+    writer->bits = 0;
+}
+
+int bit_write(
+    struct bit_writer *writer,
+    unsigned long value,
+    int count
+)
+{
+    for (int i = 0; i < count; i++)
+    {
+        writer->buffer |=
+            (value & 1) << writer->bits;
+
+        value >>= 1;
+        writer->bits++;
+
+        if (writer->bits == 8)
+        {
+            unsigned char byte =
+                writer->buffer;
+
+            if (sys_write(
+                writer->fd,
+                &byte,
+                1
+            ) != 1)
+            {
+                return 0;
+            }
+
+            writer->buffer = 0;
+            writer->bits = 0;
+        }
+    }
+
+    return 1;
+}
+
+int bit_writer_flush(
+    struct bit_writer *writer
+)
+{
+    if (writer->bits == 0)
+    {
+        return 1;
+    }
+
+    unsigned char byte =
+        writer->buffer;
+
+    if (sys_write(
+        writer->fd,
+        &byte,
+        1
+    ) != 1)
+    {
+        return 0;
+    }
+
+    writer->buffer = 0;
+    writer->bits = 0;
+
+    return 1;
+}
+
+void bit_writer_align(
+    struct bit_writer *writer
+)
+{
+    writer->buffer = 0;
+    writer->bits = 0;
+}

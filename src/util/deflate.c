@@ -18,6 +18,7 @@ along with Aethel. If not, see <https://www.gnu.org/licenses/>.
 */
 
 #include "deflate.h"
+#include "syscall.h"
 
 static const int length_base[] =
 {
@@ -58,6 +59,258 @@ static const int distance_extra[] =
     11, 11, 12, 12,
     13, 13
 };
+
+static unsigned int deflate_reverse_bits(
+    unsigned int value,
+    int count
+)
+{
+    unsigned int result = 0;
+
+    for (int i = 0; i < count; i++)
+    {
+        result <<= 1;
+        result |= value & 1;
+        value >>= 1;
+    }
+
+    return result;
+}
+
+static void deflate_fixed_code(
+    int symbol,
+    unsigned int *code,
+    int *length
+)
+{
+    unsigned int value;
+
+    if (symbol <= 143)
+    {
+        value =
+            0x30 +
+            symbol;
+
+        *length = 8;
+    }
+    else if (symbol <= 255)
+    {
+        value =
+            0x190 +
+            (symbol - 144);
+
+        *length = 9;
+    }
+    else if (symbol <= 279)
+    {
+        value =
+            symbol - 256;
+
+        *length = 7;
+    }
+    else
+    {
+        value =
+            0xC0 +
+            (symbol - 280);
+
+        *length = 8;
+    }
+
+    *code = deflate_reverse_bits(
+        value,
+        *length
+    );
+}
+
+static int deflate_length_code(
+    int length,
+    int *code,
+    int *extra,
+    int *extra_bits
+)
+{
+    if (length < 3 || length > 258)
+    {
+        return 0;
+    }
+
+    for (int i = 0; i < 29; i++)
+    {
+        int base = length_base[i];
+
+        int next;
+
+        if (i == 28)
+        {
+            next = 259;
+        }
+        else
+        {
+            next = length_base[i + 1];
+        }
+
+        if (length >= base && length < next)
+        {
+            *code = 257 + i;
+            *extra = length - base;
+            *extra_bits = length_extra[i];
+
+            return 1;
+        }
+    }
+
+    return 0;
+}
+
+static int deflate_distance_code(
+    int distance,
+    int *code,
+    int *extra,
+    int *extra_bits
+)
+{
+    if (distance < 1 || distance > 32768)
+    {
+        return 0;
+    }
+
+    for (int i = 0; i < 30; i++)
+    {
+        int base = distance_base[i];
+
+        int next;
+
+        if (i == 29)
+        {
+            next = 32769;
+        }
+        else
+        {
+            next = distance_base[i + 1];
+        }
+
+        if (distance >= base && distance < next)
+        {
+            *code = i;
+            *extra = distance - base;
+            *extra_bits = distance_extra[i];
+
+            return 1;
+        }
+    }
+
+    return 0;
+}
+
+static int deflate_write_match(
+    struct bit_writer *writer,
+    int length,
+    int distance
+)
+{
+    int length_code;
+    int length_extra;
+    int length_extra_bits;
+
+    if (!deflate_length_code(
+        length,
+        &length_code,
+        &length_extra,
+        &length_extra_bits
+    ))
+    {
+        return 0;
+    }
+
+    int distance_code;
+    int distance_extra;
+    int distance_extra_bits;
+
+    if (!deflate_distance_code(
+        distance,
+        &distance_code,
+        &distance_extra,
+        &distance_extra_bits
+    ))
+    {
+        return 0;
+    }
+
+    /*
+     * Length symbol
+     */
+    unsigned int code;
+    int code_length;
+
+    deflate_fixed_code(
+        length_code,
+        &code,
+        &code_length
+    );
+
+    if (!bit_write(
+        writer,
+        code,
+        code_length
+    ))
+    {
+        return 0;
+    }
+
+    /*
+     * Length extra bits
+     */
+    if (length_extra_bits > 0)
+    {
+        if (!bit_write(
+            writer,
+            length_extra,
+            length_extra_bits
+        ))
+        {
+            return 0;
+        }
+    }
+
+    /*
+     * Distance symbol
+     *
+     * Fixed Huffman distance codes are
+     * 5 bits long.
+     */
+    code = deflate_reverse_bits(
+        distance_code,
+        5
+    );
+
+    if (!bit_write(
+        writer,
+        code,
+        5
+    ))
+    {
+        return 0;
+    }
+
+    /*
+     * Distance extra bits
+     */
+    if (distance_extra_bits > 0)
+    {
+        if (!bit_write(
+            writer,
+            distance_extra,
+            distance_extra_bits
+        ))
+        {
+            return 0;
+        }
+    }
+
+    return 1;
+}
+
 
 int deflate_read_block_header(
     struct bit_reader *reader,
@@ -315,4 +568,208 @@ int deflate_read_dynamic_lengths(
     }
 
     return 1;
+}
+
+int deflate_read_stored_block(
+    struct bit_reader *reader,
+    unsigned char *output,
+    long output_capacity,
+    long *output_size
+)
+{
+    bit_align(reader);
+
+    unsigned char header[4];
+
+    long result = sys_read(
+        reader->fd,
+        header,
+        4
+    );
+
+    if (result != 4)
+    {
+        return 0;
+    }
+
+    unsigned short length =
+        (unsigned short)header[0] |
+        ((unsigned short)header[1] << 8);
+
+    unsigned short inverted_length =
+        (unsigned short)header[2] |
+        ((unsigned short)header[3] << 8);
+
+    if ((unsigned short)~length != inverted_length)
+    {
+        return 0;
+    }
+
+    if (*output_size + length > output_capacity)
+    {
+        return 0;
+    }
+
+    if (length > 0)
+    {
+        result = sys_read(
+            reader->fd,
+            output + *output_size,
+            length
+        );
+
+        if (result != length)
+        {
+            return 0;
+        }
+    }
+
+    *output_size += length;
+
+    return 1;
+}
+
+int deflate_write_fixed_block(
+    struct bit_writer *writer,
+    const unsigned char *data,
+    long size,
+    int final
+)
+{
+    if (!bit_write(
+        writer,
+        final,
+        1
+    ))
+    {
+        return 0;
+    }
+
+    /*
+     * BTYPE = 01
+     */
+    if (!bit_write(
+        writer,
+        1,
+        2
+    ))
+    {
+        return 0;
+    }
+
+    long position = 0;
+
+    while (position < size)
+    {
+        struct deflate_match match =
+            deflate_find_match(
+                data,
+                position,
+                size
+            );
+
+        if (match.length > 0)
+        {
+            if (!deflate_write_match(
+                writer,
+                match.length,
+                match.distance
+            ))
+            {
+                return 0;
+            }
+
+            position += match.length;
+        }
+        else
+        {
+            unsigned int code;
+            int length;
+
+            deflate_fixed_code(
+                data[position],
+                &code,
+                &length
+            );
+
+            if (!bit_write(
+                writer,
+                code,
+                length
+            ))
+            {
+                return 0;
+            }
+
+            position++;
+        }
+    }
+
+    /*
+     * End Of Block
+     */
+    unsigned int code;
+    int length;
+
+    deflate_fixed_code(
+        256,
+        &code,
+        &length
+    );
+
+    if (!bit_write(
+        writer,
+        code,
+        length
+    ))
+    {
+        return 0;
+    }
+
+    return 1;
+}
+
+struct deflate_match deflate_find_match(
+    const unsigned char *data,
+    long position,
+    long size
+)
+{
+    struct deflate_match result;
+
+    result.length = 0;
+    result.distance = 0;
+
+    for (long start = position - 1;
+         start >= 0;
+         start--)
+    {
+        int distance = position - start;
+
+        int length = 0;
+
+        while (
+            length < 258 &&
+            position + length < size &&
+            data[start + length] ==
+                data[position + length]
+        )
+        {
+            length++;
+        }
+
+        if (length > result.length)
+        {
+            result.length = length;
+            result.distance = distance;
+        }
+    }
+
+    if (result.length < 3)
+    {
+        result.length = 0;
+        result.distance = 0;
+    }
+
+    return result;
 }

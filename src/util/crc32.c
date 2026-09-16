@@ -26,6 +26,21 @@ unsigned long crc32(
 {
     unsigned long crc = 0xFFFFFFFF;
 
+    crc = crc32_update(
+        crc,
+        data,
+        size
+    );
+
+    return crc32_finish(crc);
+}
+
+unsigned long crc32_update(
+    unsigned long crc,
+    const unsigned char *data,
+    long size
+)
+{
     for (long i = 0; i < size; i++)
     {
         crc ^= data[i];
@@ -45,5 +60,12 @@ unsigned long crc32(
         }
     }
 
+    return crc;
+}
+
+unsigned long crc32_finish(
+    unsigned long crc
+)
+{
     return crc ^ 0xFFFFFFFF;
 }

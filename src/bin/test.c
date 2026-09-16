@@ -17,39 +17,20 @@ You should have received a copy of the GNU General Public License
 along with Aethel. If not, see <https://www.gnu.org/licenses/>.
 */
 
-#include "tar.h"
-#include "syscall.h"
-#include "log.h"
+#include "gzip.h"
 
-int main(
-    int argc,
-    char **argv
-)
+int main(int argc, char **argv)
 {
-    if (argc < 3)
-    {
-        log_error(
-            "test: usage: test <source> <archive>\n"
-        );
-
-        return 1;
-    }
-
-    const char *source = argv[1];
-    const char *archive = argv[2];
-
-    if (!tar_create(source, archive))
-    {
-        log_error(
-            "test: tar creation failed\n"
-        );
-
-        return 1;
-    }
-
-    log_write(
-        "test: tar archive created successfully\n"
+    int result = gzip_create(
+        argv[1],
+        argv[2],
+        GZIP_COMPRESSION_FIXED
     );
+
+    if (!result)
+    {
+        return 1;
+    }
 
     return 0;
 }

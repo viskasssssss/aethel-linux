@@ -41,18 +41,33 @@ struct gzip_footer
     unsigned char isize[4];
 };
 
+enum gzip_compression
+{
+    GZIP_COMPRESSION_NONE,
+    GZIP_COMPRESSION_FIXED
+};
+
 int gzip_open(const char *path);
+
 int gzip_read_header(
     int fd,
     struct gzip_header *header
 );
+
 int gzip_read_footer(
     int fd,
     struct gzip_footer *footer
 );
+
 long gzip_read_file(
     int fd,
     unsigned char *output,
     long output_capacity,
     int debug
+);
+
+int gzip_create(
+    const char *source,
+    const char *destination,
+    enum gzip_compression compression
 );

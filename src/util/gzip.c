@@ -36,6 +36,95 @@ static unsigned long read_le32(
         ((unsigned long)data[3] << 24);
 }
 
+static int gzip_write_header(int fd)
+{
+    unsigned char header[10] = {
+        0x1f,
+        0x8b,
+        0x08,
+        0x00,
+        0x00,
+        0x00,
+        0x00,
+        0x00,
+        0x00,
+        0x03
+    };
+
+    return sys_write(
+        fd,
+        header,
+        sizeof(header)
+    ) == sizeof(header);
+}
+
+static int gzip_write_u16(
+    int fd,
+    unsigned short value
+)
+{
+    unsigned char buffer[2];
+
+    buffer[0] = value & 0xff;
+    buffer[1] = (value >> 8) & 0xff;
+
+    return sys_write(
+        fd,
+        buffer,
+        2
+    ) == 2;
+}
+
+static int gzip_write_stored_block(
+    int archive,
+    const unsigned char *buffer,
+    unsigned short size,
+    int final
+)
+{
+    unsigned char header =
+        final ? 0x01 : 0x00;
+
+    if (sys_write(
+        archive,
+        &header,
+        1
+    ) != 1)
+    {
+        return 0;
+    }
+
+    if (!gzip_write_u16(
+        archive,
+        size
+    ))
+    {
+        return 0;
+    }
+
+    if (!gzip_write_u16(
+        archive,
+        ~size
+    ))
+    {
+        return 0;
+    }
+
+    if (size > 0)
+    {
+        if (sys_write(
+            archive,
+            buffer,
+            size
+        ) != size)
+        {
+            return 0;
+        }
+    }
+
+    return 1;
+}
+
 int gzip_open(const char *path)
 {
     return sys_openat(
@@ -153,219 +242,235 @@ long gzip_read_file(
         return -1;
     }
 
-    struct huffman_code literal_codes[288];
-    struct huffman_code distance_codes[32];
-
+    
     if (debug)
     {
         log_write("BFINAL: ");
         log_number(final);
         log_write("\n");
-
+        
         log_write("BTYPE: ");
     }
-
-    if (type == DEFLATE_BLOCK_FIXED)
-    {
-        if (debug)
-        {
-            log_write("fixed\n");
-        }
-
-        huffman_build_fixed(
-            literal_codes,
-            distance_codes
-        );
-    }
-    else if (type == DEFLATE_BLOCK_DYNAMIC)
-    {
-        if (debug)
-        {
-            log_write("dynamic\n");
-        }
-
-        struct deflate_dynamic_header dynamic_header;
-
-        if (!deflate_read_dynamic_header(
-            &reader,
-            &dynamic_header
-        ))
-        {
-            return -1;
-        }
-
-        unsigned char code_lengths[19] = { 0 };
-
-        if (!deflate_read_code_lengths(
-            &reader,
-            dynamic_header.code_length_count,
-            code_lengths
-        ))
-        {
-            return -1;
-        }
-
-        struct huffman_code code_length_codes[19];
-
-        huffman_build(
-            code_length_codes,
-            code_lengths,
-            19
-        );
-
-        int total_codes =
-            dynamic_header.literal_count +
-            dynamic_header.distance_count;
-
-        unsigned char dynamic_lengths[320] = { 0 };
-
-        if (!deflate_read_dynamic_lengths(
-            &reader,
-            code_length_codes,
-            total_codes,
-            dynamic_lengths
-        ))
-        {
-            return -1;
-        }
-
-        unsigned char literal_lengths[288] = { 0 };
-        unsigned char distance_lengths[32] = { 0 };
-
-        for (int i = 0;
-             i < dynamic_header.literal_count;
-             i++)
-        {
-            literal_lengths[i] =
-                dynamic_lengths[i];
-        }
-
-        for (int i = 0;
-             i < dynamic_header.distance_count;
-             i++)
-        {
-            distance_lengths[i] =
-                dynamic_lengths[
-                    dynamic_header.literal_count + i
-                ];
-        }
-
-        huffman_build(
-            literal_codes,
-            literal_lengths,
-            288
-        );
-
-        huffman_build(
-            distance_codes,
-            distance_lengths,
-            32
-        );
-
-        if (debug)
-        {
-            log_write("HLIT: ");
-            log_number(dynamic_header.literal_count);
-            log_write("\n");
-
-            log_write("HDIST: ");
-            log_number(dynamic_header.distance_count);
-            log_write("\n");
-
-            log_write("HCLEN: ");
-            log_number(dynamic_header.code_length_count);
-            log_write("\n");
-        }
-    }
-    else
-    {
-        return -1;
-    }
-
+    
     long output_size = 0;
-
-    while (1)
+    
+    if (type == DEFLATE_BLOCK_STORED)
     {
-        int symbol = huffman_decode(
+        if (!deflate_read_stored_block(
             &reader,
-            literal_codes,
-            288
-        );
-
-        if (symbol < 0)
+            output,
+            output_capacity,
+            &output_size
+        ))
         {
             return -1;
         }
+    }
+    else 
+    {
+        struct huffman_code literal_codes[288];
+        struct huffman_code distance_codes[32];
 
-        if (symbol < 256)
+        if (type == DEFLATE_BLOCK_FIXED)
         {
-            if (output_size >= output_capacity)
+            if (debug)
+            {
+                log_write("fixed\n");
+            }
+
+            huffman_build_fixed(
+                literal_codes,
+                distance_codes
+            );
+        }
+        else if (type == DEFLATE_BLOCK_DYNAMIC)
+        {
+            if (debug)
+            {
+                log_write("dynamic\n");
+            }
+
+            struct deflate_dynamic_header dynamic_header;
+
+            if (!deflate_read_dynamic_header(
+                &reader,
+                &dynamic_header
+            ))
             {
                 return -1;
             }
 
-            output[output_size++] =
-                (unsigned char)symbol;
+            unsigned char code_lengths[19] = { 0 };
 
-            continue;
-        }
-
-        if (symbol == 256)
-        {
-            break;
-        }
-
-        if (symbol >= 257 && symbol <= 285)
-        {
-            int length = deflate_decode_length(
+            if (!deflate_read_code_lengths(
                 &reader,
-                symbol
+                dynamic_header.code_length_count,
+                code_lengths
+            ))
+            {
+                return -1;
+            }
+
+            struct huffman_code code_length_codes[19];
+
+            huffman_build(
+                code_length_codes,
+                code_lengths,
+                19
             );
 
-            if (length < 0)
+            int total_codes =
+                dynamic_header.literal_count +
+                dynamic_header.distance_count;
+
+            unsigned char dynamic_lengths[320] = { 0 };
+
+            if (!deflate_read_dynamic_lengths(
+                &reader,
+                code_length_codes,
+                total_codes,
+                dynamic_lengths
+            ))
             {
                 return -1;
             }
 
-            int distance_symbol = huffman_decode(
-                &reader,
+            unsigned char literal_lengths[288] = { 0 };
+            unsigned char distance_lengths[32] = { 0 };
+
+            for (int i = 0;
+                i < dynamic_header.literal_count;
+                i++)
+            {
+                literal_lengths[i] =
+                    dynamic_lengths[i];
+            }
+
+            for (int i = 0;
+                i < dynamic_header.distance_count;
+                i++)
+            {
+                distance_lengths[i] =
+                    dynamic_lengths[
+                        dynamic_header.literal_count + i
+                    ];
+            }
+
+            huffman_build(
+                literal_codes,
+                literal_lengths,
+                288
+            );
+
+            huffman_build(
                 distance_codes,
+                distance_lengths,
                 32
             );
 
-            if (distance_symbol < 0)
+            if (debug)
             {
-                return -1;
-            }
+                log_write("HLIT: ");
+                log_number(dynamic_header.literal_count);
+                log_write("\n");
 
-            int distance = deflate_decode_distance(
+                log_write("HDIST: ");
+                log_number(dynamic_header.distance_count);
+                log_write("\n");
+
+                log_write("HCLEN: ");
+                log_number(dynamic_header.code_length_count);
+                log_write("\n");
+            }
+        }
+        else
+        {
+            return -1;
+        }
+
+        while (1)
+        {
+            int symbol = huffman_decode(
                 &reader,
-                distance_symbol
+                literal_codes,
+                288
             );
 
-            if (distance < 0 ||
-                distance > output_size)
+            if (symbol < 0)
             {
                 return -1;
             }
 
-            for (int i = 0; i < length; i++)
+            if (symbol < 256)
             {
                 if (output_size >= output_capacity)
                 {
                     return -1;
                 }
 
-                output[output_size] =
-                    output[output_size - distance];
+                output[output_size++] =
+                    (unsigned char)symbol;
 
-                output_size++;
+                continue;
             }
 
-            continue;
-        }
+            if (symbol == 256)
+            {
+                break;
+            }
 
-        return -1;
+            if (symbol >= 257 && symbol <= 285)
+            {
+                int length = deflate_decode_length(
+                    &reader,
+                    symbol
+                );
+
+                if (length < 0)
+                {
+                    return -1;
+                }
+
+                int distance_symbol = huffman_decode(
+                    &reader,
+                    distance_codes,
+                    32
+                );
+
+                if (distance_symbol < 0)
+                {
+                    return -1;
+                }
+
+                int distance = deflate_decode_distance(
+                    &reader,
+                    distance_symbol
+                );
+
+                if (distance < 0 ||
+                    distance > output_size)
+                {
+                    return -1;
+                }
+
+                for (int i = 0; i < length; i++)
+                {
+                    if (output_size >= output_capacity)
+                    {
+                        return -1;
+                    }
+
+                    output[output_size] =
+                        output[output_size - distance];
+
+                    output_size++;
+                }
+
+                continue;
+            }
+
+            return -1;
+        }
     }
 
     reader.bits = 0;
@@ -420,4 +525,218 @@ long gzip_read_file(
     }
 
     return output_size;
+}
+
+int gzip_create(
+    const char *source,
+    const char *destination,
+    enum gzip_compression compression
+)
+{
+    int input = sys_openat(
+        -100,
+        source,
+        O_RDONLY,
+        0
+    );
+
+    if (input < 0)
+    {
+        return 0;
+    }
+
+    int output = sys_openat(
+        -100,
+        destination,
+        O_WRONLY | O_CREAT | O_TRUNC,
+        0644
+    );
+
+    if (output < 0)
+    {
+        sys_close(input);
+        return 0;
+    }
+
+    if (!gzip_write_header(output))
+    {
+        sys_close(input);
+        sys_close(output);
+        return 0;
+    }
+
+    struct bit_writer writer;
+
+    bit_writer_init(
+        &writer,
+        output
+    );
+
+    unsigned char buffer_a[65535];
+    unsigned char buffer_b[65535];
+
+    unsigned char *current = buffer_a;
+    unsigned char *next = buffer_b;
+
+    long current_size = sys_read(
+        input,
+        current,
+        sizeof(buffer_a)
+    );
+
+    if (current_size < 0)
+    {
+        sys_close(input);
+        sys_close(output);
+        return 0;
+    }
+
+    unsigned long checksum = 0xFFFFFFFF;
+    unsigned long total_size = 0;
+
+    if (current_size == 0)
+    {
+        int result;
+
+        if (compression == GZIP_COMPRESSION_NONE)
+        {
+            result = gzip_write_stored_block(
+                output,
+                current,
+                0,
+                1
+            );
+        }
+        else if (compression == GZIP_COMPRESSION_FIXED)
+        {
+            result = deflate_write_fixed_block(
+                &writer,
+                current,
+                0,
+                1
+            );
+        }
+        else
+        {
+            result = 0;
+        }
+
+        if (!result)
+        {
+            sys_close(input);
+            sys_close(output);
+            return 0;
+        }
+    }
+    else
+    {
+        while (1)
+        {
+            long next_size = sys_read(
+                input,
+                next,
+                sizeof(buffer_b)
+            );
+
+            if (next_size < 0)
+            {
+                sys_close(input);
+                sys_close(output);
+                return 0;
+            }
+
+            int final = next_size == 0;
+
+            int result;
+
+            if (compression == GZIP_COMPRESSION_NONE)
+            {
+                result = gzip_write_stored_block(
+                    output,
+                    current,
+                    (unsigned short)current_size,
+                    final
+                );
+            }
+            else if (compression == GZIP_COMPRESSION_FIXED)
+            {
+                result = deflate_write_fixed_block(
+                    &writer,
+                    current,
+                    current_size,
+                    final
+                );
+            }
+            else
+            {
+                result = 0;
+            }
+
+            if (!result)
+            {
+                sys_close(input);
+                sys_close(output);
+                return 0;
+            }
+
+            checksum = crc32_update(
+                checksum,
+                current,
+                current_size
+            );
+
+            total_size += current_size;
+
+            if (final)
+            {
+                break;
+            }
+
+            unsigned char *temporary = current;
+            current = next;
+            next = temporary;
+
+            current_size = next_size;
+        }
+    }
+
+    if (compression == GZIP_COMPRESSION_FIXED)
+    {
+        if (!bit_writer_flush(&writer))
+        {
+            sys_close(input);
+            sys_close(output);
+            return 0;
+        }
+    }
+
+    checksum = crc32_finish(checksum);
+
+    unsigned char footer[8];
+
+    footer[0] = checksum & 0xff;
+    footer[1] = (checksum >> 8) & 0xff;
+    footer[2] = (checksum >> 16) & 0xff;
+    footer[3] = (checksum >> 24) & 0xff;
+
+    footer[4] = total_size & 0xff;
+    footer[5] = (total_size >> 8) & 0xff;
+    footer[6] = (total_size >> 16) & 0xff;
+    footer[7] = (total_size >> 24) & 0xff;
+
+    if (sys_write(
+        output,
+        footer,
+        sizeof(footer)
+    ) != sizeof(footer))
+    {
+        sys_close(input);
+        sys_close(output);
+        return 0;
+    }
+
+    sys_close(input);
+    sys_close(output);
+
+    return 1;
 }
