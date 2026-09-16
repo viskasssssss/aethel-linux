@@ -17,43 +17,33 @@ You should have received a copy of the GNU General Public License
 along with Aethel. If not, see <https://www.gnu.org/licenses/>.
 */
 
-#include "gzip.h"
-#include "syscall.h"
-#include "log.h"
+#include "crc32.h"
 
-int main(void)
+unsigned long crc32(
+    const unsigned char *data,
+    long size
+)
 {
-    int fd = gzip_open("/test.gz");
+    unsigned long crc = 0xFFFFFFFF;
 
-    if (fd < 0)
+    for (long i = 0; i < size; i++)
     {
-        log_error("failed to open gzip\n");
-        return 1;
+        crc ^= data[i];
+
+        for (int bit = 0; bit < 8; bit++)
+        {
+            if (crc & 1)
+            {
+                crc =
+                    (crc >> 1) ^
+                    0xEDB88320;
+            }
+            else
+            {
+                crc >>= 1;
+            }
+        }
     }
 
-    unsigned char output[65536];
-
-    long size = gzip_read_file(
-        fd,
-        output,
-        sizeof(output),
-        1
-    );
-
-    if (size < 0)
-    {
-        log_error("failed to read gzip\n");
-        sys_close(fd);
-        return 1;
-    }
-
-    sys_write(
-        1,
-        output,
-        size
-    );
-
-    sys_close(fd);
-
-    return 0;
+    return crc ^ 0xFFFFFFFF;
 }

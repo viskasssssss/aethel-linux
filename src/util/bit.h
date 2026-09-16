@@ -17,43 +17,25 @@ You should have received a copy of the GNU General Public License
 along with Aethel. If not, see <https://www.gnu.org/licenses/>.
 */
 
-#include "gzip.h"
-#include "syscall.h"
-#include "log.h"
+#pragma once
 
-int main(void)
+struct bit_reader
 {
-    int fd = gzip_open("/test.gz");
+    int fd;
+    unsigned long buffer;
+    int bits;
+};
 
-    if (fd < 0)
-    {
-        log_error("failed to open gzip\n");
-        return 1;
-    }
+void bit_reader_init(
+    struct bit_reader *reader,
+    int fd
+);
 
-    unsigned char output[65536];
+int bit_read(
+    struct bit_reader *reader
+);
 
-    long size = gzip_read_file(
-        fd,
-        output,
-        sizeof(output),
-        1
-    );
-
-    if (size < 0)
-    {
-        log_error("failed to read gzip\n");
-        sys_close(fd);
-        return 1;
-    }
-
-    sys_write(
-        1,
-        output,
-        size
-    );
-
-    sys_close(fd);
-
-    return 0;
-}
+unsigned long bit_read_bits(
+    struct bit_reader *reader,
+    int count
+);

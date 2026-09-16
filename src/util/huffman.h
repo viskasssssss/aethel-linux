@@ -17,43 +17,30 @@ You should have received a copy of the GNU General Public License
 along with Aethel. If not, see <https://www.gnu.org/licenses/>.
 */
 
-#include "gzip.h"
-#include "syscall.h"
-#include "log.h"
+#pragma once
 
-int main(void)
+#include "bit.h"
+
+struct huffman_code
 {
-    int fd = gzip_open("/test.gz");
+    unsigned int code;
+    int length;
+    int symbol;
+};
 
-    if (fd < 0)
-    {
-        log_error("failed to open gzip\n");
-        return 1;
-    }
+int huffman_build_fixed(
+    struct huffman_code *literal_codes,
+    struct huffman_code *distance_codes
+);
 
-    unsigned char output[65536];
+int huffman_decode(
+    struct bit_reader *reader,
+    const struct huffman_code *codes,
+    int count
+);
 
-    long size = gzip_read_file(
-        fd,
-        output,
-        sizeof(output),
-        1
-    );
-
-    if (size < 0)
-    {
-        log_error("failed to read gzip\n");
-        sys_close(fd);
-        return 1;
-    }
-
-    sys_write(
-        1,
-        output,
-        size
-    );
-
-    sys_close(fd);
-
-    return 0;
-}
+int huffman_build(
+    struct huffman_code *codes,
+    const unsigned char *lengths,
+    int count
+);

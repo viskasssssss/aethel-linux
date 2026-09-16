@@ -134,6 +134,15 @@ void log_number_padded(long number, long width)
     }
 }
 
+void log_char(char character)
+{
+    sys_write(
+        1,
+        &character,
+        1
+    );
+}
+
 void log_color(enum log_color color)
 {
     if (color < LOG_COLOR_DEFAULT ||

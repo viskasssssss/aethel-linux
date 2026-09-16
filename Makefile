@@ -43,15 +43,40 @@ $(ROOTFS_DIR)/bin/%: src/bin/%.c \
 	$(BUILD_DIR)/start.o \
 	$(BUILD_DIR)/syscall.o \
 	$(BUILD_DIR)/log.o \
-	$(BUILD_DIR)/tar.o
+	$(BUILD_DIR)/tar.o \
+	$(BUILD_DIR)/gzip.o \
+	$(BUILD_DIR)/bit.o \
+	$(BUILD_DIR)/deflate.o \
+	$(BUILD_DIR)/huffman.o \
+	$(BUILD_DIR)/crc32.o
 	$(CC) -c $(CFLAGS) $< -o $(BUILD_DIR)/$*.o
 	$(LD) \
 		$(BUILD_DIR)/start.o \
 		$(BUILD_DIR)/syscall.o \
 		$(BUILD_DIR)/log.o \
 		$(BUILD_DIR)/tar.o \
+		$(BUILD_DIR)/gzip.o \
+		$(BUILD_DIR)/bit.o \
+		$(BUILD_DIR)/deflate.o \
+		$(BUILD_DIR)/huffman.o \
+		$(BUILD_DIR)/crc32.o \
 		$(BUILD_DIR)/$*.o \
 		-o $@
+
+$(BUILD_DIR)/crc32.o: $(SRC_DIR)/util/crc32.c $(SRC_DIR)/util/crc32.h $(SRC_DIR)/util/syscall.h
+	$(CC) -c $(CFLAGS) $< -o $@
+
+$(BUILD_DIR)/huffman.o: $(SRC_DIR)/util/huffman.c $(SRC_DIR)/util/huffman.h $(SRC_DIR)/util/syscall.h
+	$(CC) -c $(CFLAGS) $< -o $@
+
+$(BUILD_DIR)/deflate.o: $(SRC_DIR)/util/deflate.c $(SRC_DIR)/util/deflate.h $(SRC_DIR)/util/syscall.h
+	$(CC) -c $(CFLAGS) $< -o $@
+
+$(BUILD_DIR)/bit.o: $(SRC_DIR)/util/bit.c $(SRC_DIR)/util/bit.h $(SRC_DIR)/util/syscall.h
+	$(CC) -c $(CFLAGS) $< -o $@
+
+$(BUILD_DIR)/gzip.o: $(SRC_DIR)/util/gzip.c $(SRC_DIR)/util/gzip.h $(SRC_DIR)/util/syscall.h
+	$(CC) -c $(CFLAGS) $< -o $@
 	
 $(BUILD_DIR)/tar.o: $(SRC_DIR)/util/tar.c $(SRC_DIR)/util/tar.h $(SRC_DIR)/util/syscall.h
 	$(CC) -c $(CFLAGS) $< -o $@

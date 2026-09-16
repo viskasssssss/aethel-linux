@@ -37,6 +37,7 @@ void log_write(const char *text);
 void log_write_length(const char *text, long length);
 void log_number(long number);
 void log_number_padded(long number, long width);
+void log_char(char character);
 
 void log_color(enum log_color color);
 void log_reset_color(void);
