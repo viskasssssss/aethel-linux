@@ -42,14 +42,19 @@ log: $(BUILD_DIR)/log.o
 $(ROOTFS_DIR)/bin/%: src/bin/%.c \
 	$(BUILD_DIR)/start.o \
 	$(BUILD_DIR)/syscall.o \
-	$(BUILD_DIR)/log.o
+	$(BUILD_DIR)/log.o \
+	$(BUILD_DIR)/tar.o
 	$(CC) -c $(CFLAGS) $< -o $(BUILD_DIR)/$*.o
 	$(LD) \
 		$(BUILD_DIR)/start.o \
 		$(BUILD_DIR)/syscall.o \
 		$(BUILD_DIR)/log.o \
+		$(BUILD_DIR)/tar.o \
 		$(BUILD_DIR)/$*.o \
 		-o $@
+	
+$(BUILD_DIR)/tar.o: $(SRC_DIR)/util/tar.c $(SRC_DIR)/util/tar.h $(SRC_DIR)/util/syscall.h
+	$(CC) -c $(CFLAGS) $< -o $@
 
 $(BUILD_DIR)/log.o: $(SRC_DIR)/util/log.c $(SRC_DIR)/util/log.h $(SRC_DIR)/util/syscall.h
 	$(CC) -c $(CFLAGS) $< -o $@
