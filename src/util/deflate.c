@@ -19,6 +19,8 @@ along with Aethel. If not, see <https://www.gnu.org/licenses/>.
 
 #include "deflate.h"
 #include "syscall.h"
+#include "crc32.h"
+#include "log.h"
 
 static const int length_base[] =
 {
@@ -597,9 +599,7 @@ int deflate_read_dynamic_lengths(
 
 int deflate_read_stored_block(
     struct bit_reader *reader,
-    unsigned char *output,
-    long output_capacity,
-    long *output_size
+    struct deflate_output *output
 )
 {
     bit_align(reader);
@@ -630,26 +630,43 @@ int deflate_read_stored_block(
         return 0;
     }
 
-    if (*output_size + length > output_capacity)
-    {
-        return 0;
-    }
+    unsigned char buffer[4096];
 
-    if (length > 0)
+    long remaining = length;
+
+    while (remaining > 0)
     {
+        long count = remaining;
+
+        if (count > sizeof(buffer))
+        {
+            count = sizeof(buffer);
+        }
+
         result = sys_read(
             reader->fd,
-            output + *output_size,
-            length
+            buffer,
+            count
         );
 
-        if (result != length)
+        if (result != count)
         {
             return 0;
         }
-    }
 
-    *output_size += length;
+        for (long i = 0; i < count; i++)
+        {
+            if (!deflate_output_write(
+                output,
+                buffer[i]
+            ))
+            {
+                return 0;
+            }
+        }
+
+        remaining -= count;
+    }
 
     return 1;
 }
@@ -761,16 +778,28 @@ struct deflate_match deflate_find_match(
 )
 {
     struct deflate_match result;
-
     result.length = 0;
     result.distance = 0;
 
-    for (long start = position - 1;
-         start >= 0;
-         start--)
-    {
-        int distance = position - start;
+    long start_position = position - 32768;
 
+    if (start_position < 0)
+    {
+        start_position = 0;
+    }
+
+    int attempts = 0;
+
+    for (long start = position - 1;
+        start >= start_position;
+        start--)
+    {
+        if (attempts++ >= 1024)
+        {
+            break;
+        }
+
+        int distance = position - start;
         int length = 0;
 
         while (
@@ -787,6 +816,11 @@ struct deflate_match deflate_find_match(
         {
             result.length = length;
             result.distance = distance;
+
+            if (length == 258)
+            {
+                break;
+            }
         }
     }
 
@@ -1426,7 +1460,16 @@ int deflate_write_dynamic_block(
         }
     }
 
-    if (distance_active == 1)
+    /*
+     * A distance tree must contain at least
+     * one symbol, even when the block contains
+     * no distance codes.
+     */
+    if (distance_active == 0)
+    {
+        distance_lengths[0] = 1;
+    }
+    else if (distance_active == 1)
     {
         for (int i = 0; i < 30; i++)
         {
@@ -1587,6 +1630,7 @@ int deflate_write_dynamic_block(
     /*
      * Write the actual LZ77 stream.
      */
+
     long position = 0;
 
     while (position < size)
@@ -1638,6 +1682,94 @@ int deflate_write_dynamic_block(
     {
         return 0;
     }
+
+    return 1;
+}
+
+int deflate_output_write(
+    struct deflate_output *output,
+    unsigned char value
+)
+{
+    if (output->size >= output->capacity)
+    {
+        if (!deflate_output_flush(output))
+        {
+            return 0;
+        }
+    }
+
+    output->buffer[output->size++] = value;
+
+    output->window[
+        output->window_position
+    ] = value;
+
+    output->window_position++;
+
+    if (output->window_position >= sizeof(output->window))
+    {
+        output->window_position = 0;
+    }
+
+    if (output->window_size < sizeof(output->window))
+    {
+        output->window_size++;
+    }
+
+    output->crc = crc32_update(
+        output->crc,
+        &value,
+        1
+    );
+
+    return 1;
+}
+
+int deflate_output_flush(
+    struct deflate_output *output
+)
+{
+    if (output->size == 0)
+    {
+        return 1;
+    }
+
+    if (!output->flush(
+        output->buffer,
+        output->size,
+        output->context
+    ))
+    {
+        return 0;
+    }
+
+    output->size = 0;
+
+    return 1;
+}
+
+int deflate_output_read(
+    struct deflate_output *output,
+    long distance,
+    unsigned char *value
+)
+{
+    if (distance <= 0 ||
+        distance > output->window_size)
+    {
+        return 0;
+    }
+
+    long position =
+        output->window_position - distance;
+
+    if (position < 0)
+    {
+        position += sizeof(output->window);
+    }
+
+    *value = output->window[position];
 
     return 1;
 }

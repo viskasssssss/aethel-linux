@@ -217,3 +217,84 @@ int archive_extract_gzip(
 
     return 1;
 }
+
+int archive_create(
+    const char *source,
+    const char *destination
+)
+{
+    const char *temporary_path =
+        "/tmp/archive.tar";
+
+    if (!tar_create(
+        source,
+        temporary_path
+    ))
+    {
+        log_error(
+            "archive: failed to create temporary tar\n"
+        );
+
+        return 0;
+    }
+
+    int result = gzip_create(
+        temporary_path,
+        destination,
+        GZIP_COMPRESSION_DYNAMIC
+    );
+
+    sys_unlink(temporary_path);
+
+    if (!result)
+    {
+        log_error(
+            "archive: failed to create gzip\n"
+        );
+
+        return 0;
+    }
+
+    return 1;
+}
+
+int archive_create_tar(
+    const char *source,
+    const char *destination
+)
+{
+    if (!tar_create(
+        source,
+        destination
+    ))
+    {
+        log_error(
+            "archive: failed to create tar\n"
+        );
+
+        return 0;
+    }
+
+    return 1;
+}
+
+int archive_create_gzip(
+    const char *source,
+    const char *destination
+)
+{
+    if (!gzip_create(
+        source,
+        destination,
+        GZIP_COMPRESSION_DYNAMIC
+    ))
+    {
+        log_error(
+            "archive: failed to create gzip\n"
+        );
+
+        return 0;
+    }
+
+    return 1;
+}

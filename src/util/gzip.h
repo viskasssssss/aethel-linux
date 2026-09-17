@@ -19,6 +19,8 @@ along with Aethel. If not, see <https://www.gnu.org/licenses/>.
 
 #pragma once
 
+#include "deflate.h"
+
 #define GZIP_FLAG_FEXTRA   0x04
 #define GZIP_FLAG_FNAME    0x08
 #define GZIP_FLAG_FCOMMENT 0x10
@@ -61,9 +63,8 @@ int gzip_read_footer(
 );
 
 long gzip_read_file(
-    int fd,
-    unsigned char *output,
-    long output_capacity,
+    int *fd,
+    struct deflate_output *output,
     int debug
 );
 

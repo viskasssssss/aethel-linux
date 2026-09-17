@@ -33,3 +33,18 @@ int archive_extract_gzip(
     const char *path,
     const char *destination
 );
+
+int archive_create(
+    const char *source,
+    const char *destination
+);
+
+int archive_create_tar(
+    const char *source,
+    const char *destination
+);
+
+int archive_create_gzip(
+    const char *source,
+    const char *destination
+);

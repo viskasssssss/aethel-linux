@@ -18,7 +18,8 @@ along with Aethel. If not, see <https://www.gnu.org/licenses/>.
 */
 
 /*
-B.A.T. (Basic Archive Tool) is a built-in Aethel Linux utility that provides a convenient interface for working with archives.
+B.A.T. (Basic Archive Tool) is a built-in Aethel Linux utility 
+that provides a convenient interface for working with archives.
 */
 
 #include "archive.h"
@@ -51,6 +52,7 @@ enum bat_operation
 {
     BAT_OPERATION_NONE,
     BAT_OPERATION_EXTRACT,
+    BAT_OPERATION_CREATE,
     BAT_OPERATION_VERSION
 };
 
@@ -103,6 +105,42 @@ int bat_parse_arguments(
 
             arguments->operation =
                 BAT_OPERATION_EXTRACT;
+
+            arguments->input = argv[++i];
+
+            continue;
+        }
+
+        if (string_comparsion(argument, "-g") == 0)
+        {
+            if (i + 1 >= argc)
+            {
+                log_error(
+                    "bat: -g requires a source.\n"
+                );
+                return 0;
+            }
+
+            arguments->operation =
+                BAT_OPERATION_CREATE;
+
+            arguments->input = argv[++i];
+
+            continue;
+        }
+
+        if (string_comparsion(argument, "-g") == 0)
+        {
+            if (i + 1 >= argc)
+            {
+                log_error(
+                    "bat: -g requires a source.\n"
+                );
+                return 0;
+            }
+
+            arguments->operation =
+                BAT_OPERATION_CREATE;
 
             arguments->input = argv[++i];
 
@@ -184,7 +222,20 @@ int bat_validate_arguments(
 
     if (arguments->input == 0)
     {
-        log_error("bat: no archive specified.\n");
+        if (arguments->operation ==
+            BAT_OPERATION_CREATE)
+        {
+            log_error(
+                "bat: no source specified.\n"
+            );
+        }
+        else
+        {
+            log_error(
+                "bat: no archive specified.\n"
+            );
+        }
+
         return 0;
     }
 
@@ -248,7 +299,61 @@ int bat_execute(
                     "Archive extracted successfully.\n"
                 );
 
-                log_write("Output directory: '");
+                log_write("Output: '");
+                log_info(arguments->output);
+                log_write("'\n");
+            }
+
+            return result;
+        }
+        case BAT_OPERATION_CREATE:
+        {
+            log_write("Generating '");
+            log_info(arguments->output);
+            log_write("'\n...\n");
+
+            int result;
+
+            if (arguments->archive == BAT_ARCHIVE_GZIP)
+            {
+                result = archive_create_gzip(
+                    arguments->input,
+                    arguments->output
+                );
+            }
+            else if (arguments->archive == BAT_ARCHIVE_TAR)
+            {
+                if (arguments->compression ==
+                    BAT_COMPRESSION_GZIP)
+                {
+                    result = archive_create(
+                        arguments->input,
+                        arguments->output
+                    );
+                }
+                else
+                {
+                    result = archive_create_tar(
+                        arguments->input,
+                        arguments->output
+                    );
+                }
+            }
+            else
+            {
+                log_error(
+                    "bat: unsupported archive type.\n"
+                );
+                return 0;
+            }
+
+            if (result)
+            {
+                log_success(
+                    "Archive created successfully.\n"
+                );
+
+                log_write("Output archive: '");
                 log_info(arguments->output);
                 log_write("'\n");
             }

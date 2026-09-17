@@ -205,15 +205,14 @@ int gzip_read_footer(
 }
 
 long gzip_read_file(
-    int fd,
-    unsigned char *output,
-    long output_capacity,
+    int *fd,
+    struct deflate_output *output,
     int debug
 )
 {
     struct gzip_header header;
 
-    if (!gzip_read_header(fd, &header))
+    if (!gzip_read_header(*fd, &header))
     {
         return -1;
     }
@@ -227,7 +226,7 @@ long gzip_read_file(
 
     bit_reader_init(
         &reader,
-        fd
+        *fd
     );
 
     int final;
@@ -258,13 +257,13 @@ long gzip_read_file(
     {
         if (!deflate_read_stored_block(
             &reader,
-            output,
-            output_capacity,
-            &output_size
+            output
         ))
         {
             return -1;
         }
+
+        output_size = output->size;
     }
     else 
     {
@@ -403,13 +402,15 @@ long gzip_read_file(
 
             if (symbol < 256)
             {
-                if (output_size >= output_capacity)
+                if (!deflate_output_write(
+                    output,
+                    (unsigned char)symbol
+                ))
                 {
                     return -1;
                 }
 
-                output[output_size++] =
-                    (unsigned char)symbol;
+                output_size++;
 
                 continue;
             }
@@ -455,13 +456,24 @@ long gzip_read_file(
 
                 for (int i = 0; i < length; i++)
                 {
-                    if (output_size >= output_capacity)
+                    unsigned char value;
+
+                    if (!deflate_output_read(
+                        output,
+                        distance,
+                        &value
+                    ))
                     {
                         return -1;
                     }
 
-                    output[output_size] =
-                        output[output_size - distance];
+                    if (!deflate_output_write(
+                        output,
+                        value
+                    ))
+                    {
+                        return -1;
+                    }
 
                     output_size++;
                 }
@@ -473,12 +485,17 @@ long gzip_read_file(
         }
     }
 
+    if (!deflate_output_flush(output))
+    {
+        return -1;
+    }
+
     reader.bits = 0;
     reader.buffer = 0;
 
     struct gzip_footer footer;
 
-    if (!gzip_read_footer(fd, &footer))
+    if (!gzip_read_footer(*fd, &footer))
     {
         return -1;
     }
@@ -490,7 +507,7 @@ long gzip_read_file(
         read_le32(footer.isize);
 
     unsigned long actual_crc =
-        crc32(output, output_size);
+        crc32_finish(output->crc);
 
     if (debug)
     {
@@ -683,7 +700,7 @@ int gzip_create(
                     current, 
                     current_size, 
                     final 
-                ); 
+                );
             }
             else
             {

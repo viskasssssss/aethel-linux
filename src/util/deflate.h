@@ -50,6 +50,27 @@ struct deflate_code_length_symbol
     int extra_bits;
 };
 
+struct deflate_output
+{
+    unsigned char *buffer;
+    long capacity;
+    long size;
+
+    unsigned char window[32768];
+    long window_size;
+    long window_position;
+
+    unsigned long crc;
+
+    int (*flush)(
+        const unsigned char *data,
+        long size,
+        void *context
+    );
+
+    void *context;
+};
+
 int deflate_read_block_header(
     struct bit_reader *reader,
     int *final,
@@ -86,9 +107,7 @@ int deflate_read_dynamic_lengths(
 
 int deflate_read_stored_block(
     struct bit_reader *reader,
-    unsigned char *output,
-    long output_capacity,
-    long *output_size
+    struct deflate_output *output
 );
 
 int deflate_write_fixed_block(
@@ -185,4 +204,19 @@ int deflate_write_dynamic_block(
     const unsigned char *data,
     long size,
     int final
+);
+
+int deflate_output_write(
+    struct deflate_output *output,
+    unsigned char value
+);
+
+int deflate_output_flush(
+    struct deflate_output *output
+);
+
+int deflate_output_read(
+    struct deflate_output *output,
+    long distance,
+    unsigned char *value
 );
